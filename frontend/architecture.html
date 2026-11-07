@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AfterThought architecture reference covering graph authoring, Temporal durability, sandbox execution, Postgres, Hindsight, evaluation and human approval.">
+  <title>AfterThought · Architecture</title>
+  <style>
+    :root { color-scheme: light; --ink: #172841; --muted: #566780; --navy: #152a4b; --blue: #315fd4; --green: #19765d; --line: #dce3ed; --paper: #f5f6f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 28px; }
+    body { margin: 0; color: var(--ink); background: var(--paper); line-height: 1.65; }
+    a { color: var(--blue); text-underline-offset: 4px; }
+    button, select { font: inherit; }
+    button { cursor: pointer; touch-action: manipulation; }
+    button:active { transform: scale(.98); }
+    :focus-visible { outline: 3px solid #678dff; outline-offset: 4px; }
+    .skip { position: fixed; top: -100px; left: 20px; z-index: 30; background: white; padding: 12px; }
+    .skip:focus { top: 10px; }
+    .sidebar { position: fixed; width: 236px; inset: 0 auto 0 0; padding: 32px 20px; border-right: 1px solid var(--line); background: #edf0f5; display: flex; flex-direction: column; overflow-y: auto; }
+    .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--ink); font-size: 19px; font-weight: 700; letter-spacing: -.5px; }
+    .mark { display: grid; place-items: center; background: var(--navy); color: white; width: 38px; height: 38px; border-radius: 12px; font-size: 23px; }
+    .sidebar p { color: var(--muted); font-size: 12px; margin: 17px 0 28px; }
+    nav { display: grid; gap: 5px; }
+    nav a { text-decoration: none; color: var(--muted); padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: 550; }
+    nav a[aria-current="location"] { color: var(--ink); background: white; box-shadow: 0 2px 8px #13274408; }
+    .nav-footer { margin-top: auto; padding-top: 32px; font-size: 12px; color: var(--muted); }
+    .nav-footer a { display: inline-block; margin-top: 8px; }
+    main { margin-left: 236px; max-width: 1700px; padding: 38px clamp(24px, 4vw, 76px) 70px; }
+    .topline { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 26px; font-size: 12px; color: var(--muted); }
+    .topline span { letter-spacing: .1em; text-transform: uppercase; }
+    .quiet-button { border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); padding: 8px 13px; font-size: 12px; }
+    .hero { padding: clamp(28px, 4vw, 55px); border-radius: 24px; color: white; background: linear-gradient(120deg, #14243f, #234270); position: relative; overflow: hidden; }
+    .eyebrow { color: #a9c1e7; text-transform: uppercase; font-size: 11px; font-weight: 650; letter-spacing: .14em; margin: 0 0 17px; }
+    h1 { font-size: clamp(36px, 4.5vw, 65px); letter-spacing: -.05em; line-height: 1.05; max-width: 780px; margin: 0 0 23px; font-weight: 650; text-wrap: balance; }
+    .hero > p { max-width: 720px; color: #d0dced; margin: 0; font-size: 16px; }
+    .hero-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #ffffff25; margin-top: 34px; padding-top: 26px; gap: 24px; }
+    .hero-stats strong { display: block; font-size: 25px; font-weight: 600; letter-spacing: -.02em; }
+    .hero-stats span { color: #bfcee3; font-size: 12px; }
+    section { margin-top: 60px; scroll-margin-top: 30px; }
+    .section-head { display: flex; gap: 20px; justify-content: space-between; align-items: baseline; margin-bottom: 22px; }
+    h2 { font-size: 28px; line-height: 1.2; letter-spacing: -.035em; margin: 0 0 10px; }
+    .section-head p { max-width: 720px; margin: 0; color: var(--muted); font-size: 14px; }
+    h3 { font-size: 17px; line-height: 1.35; letter-spacing: -.02em; margin: 0 0 12px; }
+    h4 { font-size: 13px; margin: 0 0 8px; }
+    p { margin: 0 0 14px; }
+    .card { background: white; border: 1px solid var(--line); border-radius: 15px; padding: 25px; min-width: 0; }
+    .card p, .card li { font-size: 13px; color: var(--muted); }
+    .card p:last-child { margin-bottom: 0; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .subtle { color: var(--muted); font-size: 12px; }
+    .source { font-size: 12px; margin-top: 17px; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: .86em; }
+    code { overflow-wrap: anywhere; }
+    pre { background: #edf2f8; padding: 17px; border-radius: 9px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+    .path-controls { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 22px; }
+    .path-controls button { padding: 9px 15px; background: #edf1f7; color: #455875; border: 1px solid transparent; border-radius: 8px; font-size: 12px; font-weight: 600; }
+    .path-controls button[aria-pressed="true"] { color: white; background: var(--navy); }
+    .map { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 26px; }
+    .lane { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 20px; align-items: center; padding: 17px 0; border-bottom: 1px solid #edf0f5; }
+    .lane:last-child { border-bottom: 0; }
+    .lane-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); font-weight: 650; }
+    .node-row { display: flex; gap: 13px; align-items: stretch; }
+    .node { flex: 1; min-width: 0; text-align: left; padding: 16px; border: 1px solid var(--line); background: #f8fafc; border-radius: 10px; color: var(--ink); }
+    .node strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .node small { display: block; color: var(--muted); line-height: 1.5; font-size: 11px; }
+    .node.is-in-path { background: #eff4ff; border-color: #8ba8ed; }
+    .node[aria-pressed="true"] { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .node .tag { display: inline-block; font-size: 9px; letter-spacing: .03em; color: var(--green); background: #e0f2eb; padding: 2px 6px; border-radius: 4px; margin-top: 8px; }
+    .arrow { color: #879bb6; align-self: center; font-size: 18px; flex: 0 0 auto; }
+    .path-caption { background: #eef3fc; border-radius: 10px; padding: 15px 18px; margin: 21px 0 0; font-size: 13px; color: #354c6e; min-height: 72px; }
+    .inspector { display: grid; grid-template-columns: 1fr 1.5fr; gap: 30px; margin-top: 17px; padding: 23px; border-left: 3px solid var(--blue); background: white; border-radius: 0 12px 12px 0; }
+    .inspector p { font-size: 13px; color: var(--muted); margin-bottom: 0; }
+    .inspector .source { display: inline-block; margin-top: 10px; }
+    .flow-list { list-style: none; padding: 0; margin: 0; counter-reset: flow; }
+    .flow-list li { position: relative; padding: 0 0 22px 37px; counter-increment: flow; font-size: 13px; color: var(--muted); }
+    .flow-list li::before { content: counter(flow); position: absolute; top: 0; left: 0; background: #edf2fb; border: 1px solid #d7e1f2; color: var(--blue); border-radius: 50%; height: 24px; width: 24px; display: grid; place-items: center; font-size: 11px; font-weight: 650; }
+    .flow-list li:not(:last-child)::after { content: ""; width: 1px; background: var(--line); position: absolute; left: 12px; top: 28px; bottom: 4px; }
+    .flow-list li:last-child { padding-bottom: 0; }
+    .flow-list strong { display: block; color: var(--ink); margin-bottom: 3px; }
+    .callout { background: #eaf5ef; border: 1px solid #c5e4d6; color: #245c49; padding: 18px 22px; border-radius: 12px; margin-top: 18px; font-size: 13px; }
+    .callout strong { color: #1b6149; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: white; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+    th, td { padding: 15px 19px; border-bottom: 1px solid #e7ecf3; vertical-align: top; }
+    th { background: #eef2f8; font-weight: 650; color: #3c5271; }
+    td { color: var(--muted); }
+    td strong { color: var(--ink); }
+    tr:last-child td { border-bottom: 0; }
+    .table-wrap table { min-width: 640px; }
+    .table-wrap caption { text-align: left; padding: 15px 19px; font-weight: 600; color: var(--ink); }
+    .reliability-demo { margin-top: 20px; background: var(--navy); color: white; padding: 27px; border-radius: 16px; }
+    .reliability-demo p { color: #c2d1e5; font-size: 13px; }
+    .reliability-demo .path-controls button { background: #ffffff15; color: #d2def0; border: 1px solid #ffffff25; }
+    .reliability-demo .path-controls button[aria-pressed="true"] { background: white; color: var(--navy); }
+    .recovery-stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .recovery-stages div { border-top: 3px solid #ffffff30; padding-top: 12px; font-size: 12px; color: #b3c4de; }
+    .recovery-stages div.recovered { border-color: #7fd4b5; color: white; }
+    .recovery-stages strong { display: block; margin-bottom: 5px; }
+    #recovery-description { margin: 20px 0 0; min-height: 45px; }
+    .contract { border-left: 3px solid var(--green); }
+    .split { display: flex; margin: 20px 0 10px; height: 48px; overflow: hidden; border-radius: 9px; }
+    .split > div { display: grid; place-items: center; font-size: 11px; color: white; }
+    .split .train { flex: 3; background: #345cca; }
+    .split .dev { flex: 1; background: #6584d5; }
+    .split .audit { flex: 1; background: #247f68; }
+    .compact-list { padding-left: 19px; margin: 12px 0 0; }
+    .compact-list li { margin: 8px 0; }
+    details { border-top: 1px solid var(--line); padding: 14px 0; }
+    details:last-child { padding-bottom: 0; }
+    summary { cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
+    details p { margin: 10px 0 0; }
+    .endpoint { display: grid; grid-template-columns: minmax(130px, .8fr) 2fr; gap: 18px; font-size: 12px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+    .endpoint:last-child { border: 0; }
+    .endpoint span { color: var(--muted); }
+    .footer { margin-top: 55px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 20px; }
+    @media (hover: hover) { nav a:hover { background: #ffffff80; } .node:hover { border-color: var(--blue); } .quiet-button:hover { background: #edf2fb; } }
+    @media (min-width: 1800px) { main { margin-right: auto; } }
+    @media (max-width: 1100px) { .sidebar { width: 195px; padding: 25px 13px; } main { margin-left: 195px; padding: 28px 26px 50px; } .lane { grid-template-columns: 1fr; gap: 8px; } .grid-3 { grid-template-columns: 1fr; } .node { padding: 12px; } }
+    @media (max-width: 760px) { .sidebar { position: static; width: 100%; padding: 16px 20px; border-bottom: 1px solid var(--line); } .sidebar > p, .nav-footer { display: none; } nav { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 15px; } nav a { padding: 6px 8px; font-size: 11px; } main { margin: 0; padding: 24px 16px 35px; } .topline { font-size: 10px; } .hero { padding: 28px; border-radius: 18px; } .hero-stats { gap: 12px; } .hero-stats strong { font-size: 21px; } .hero-stats span { font-size: 10px; } section { margin-top: 42px; } h2 { font-size: 25px; } .grid-2, .inspector { grid-template-columns: 1fr; } .inspector { gap: 12px; } .map { padding: 18px; } .node-row { flex-direction: column; gap: 9px; } .arrow { transform: rotate(90deg); line-height: 1; } .node { width: 100%; } .node small { font-size: 12px; } .recovery-stages { grid-template-columns: 1fr 1fr; gap: 20px; } .footer { flex-direction: column; } .card { padding: 21px; } .endpoint { grid-template-columns: 1fr; gap: 5px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+    @media print { body { background: white; font-size: 10pt; } .sidebar, .topline, .path-controls, .inspector, .reliability-demo, .skip { display: none !important; } main { margin: 0; padding: 0; max-width: none; } .hero { background: white; color: var(--ink); padding: 0 0 20px; border-radius: 0; } .hero p, .eyebrow, .hero-stats span { color: var(--muted); } h1 { font-size: 32pt; } .hero-stats { border-color: var(--line); } section { margin-top: 28px; } .card, .map, .table-wrap { break-inside: avoid; } .node { background: white !important; color: var(--ink); } a { color: var(--ink); } .table-wrap { overflow: visible; } .table-wrap table { min-width: 0; } .grid-2, .grid-3 { gap: 12px; } .node-row { flex-direction: row; } .lane { grid-template-columns: 95px 1fr; } }
+  </style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to architecture</a>
+<aside class="sidebar">
+  <a class="brand" href="#overview"><span class="mark" aria-hidden="true">A</span>AfterThought</a>
+  <p>Technical architecture<br>Implementation reference · November 2026</p>
+  <nav aria-label="Architecture sections">
+    <a href="#overview" aria-current="location">System overview</a>
+    <a href="#lifecycle">Build, approve, serve</a>
+    <a href="#temporal">Temporal & reliability</a>
+    <a href="#sandbox">Sandbox boundaries</a>
+    <a href="#storage">Storage & memory</a>
+    <a href="#learning">Learning & evaluation</a>
+    <a href="#review">Automatic review</a>
+    <a href="#contracts">Contracts & API</a>
+    <a href="#deployment">Local deployment</a>
+  </nav>
+  <div class="nav-footer">Source snapshot <code>2f9c17f</code><br><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/docs/technical-design.md">Read the technical design ↗</a></div>
+</aside>
+<main id="main">
+  <div class="topline"><span>Engineering / system architecture</span><button type="button" class="quiet-button" id="print">Print / save PDF</button></div>
+  <header class="hero">
+    <div class="eyebrow">AfterThought runtime</div>
+    <h1>Author the graph.<br>Run it. Learn from evidence.</h1>
+    <p>A durable agent builds an executable workflow from labelled data. Versioned nodes turn that work into reusable computation. Measured revisions return to a human for activation.</p>
+    <div class="hero-stats">
+      <div><strong>4 tools</strong><span>read · bash · edit · write</span></div>
+      <div><strong>0 LLM calls</strong><span>during approved graph serving</span></div>
+      <div><strong>Human approval</strong><span>required for every activation</span></div>
+    </div>
+  </header>
+
+  <section id="overview">
+    <div class="section-head"><div><h2>The whole system</h2><p>Select a flow to highlight its components. Select any component to inspect its responsibility and trust boundary.</p></div></div>
+    <div class="path-controls" role="group" aria-label="Highlight architecture flow">
+      <button type="button" data-path="all" aria-pressed="true">All components</button>
+      <button type="button" data-path="author" aria-pressed="false">Author & evaluate</button>
+      <button type="button" data-path="serve" aria-pressed="false">Serve a batch</button>
+      <button type="button" data-path="improve" aria-pressed="false">Review & improve</button>
+    </div>
+    <div class="map" aria-label="System component map">
+      <div class="lane"><div class="lane-label">Operator</div><div class="node-row">
+        <button type="button" class="node" data-component="browser" aria-pressed="true"><strong>Browser frontend</strong><small>CSV / policy intake, graphs, traces, metrics</small></button>
+        <span class="arrow" aria-hidden="true">→</span>
+        <button type="button" class="node" data-component="api" aria-pressed="false"><strong>Go HTTP API + Temporal client</strong><small>Validate, journal admission, submit stable workflow ID</small></button>
+        <button type="button" class="node" data-component="approval" aria-pressed="false"><strong>Human approval</strong><small>Reviewer + gates + expected current release</small><span class="tag">Activation boundary</span></button>
+      </div></div>
+      <div class="lane"><div class="lane-label">Orchestration</div><div class="node-row">
+        <button type="button" class="node" data-component="temporal" aria-pressed="false"><strong>Temporal service</strong><small>Durable event history, task queues, timers</small></button>
+        <span class="arrow" aria-hidden="true">⇄</span>
+        <button type="button" class="node" data-component="worker" aria-pressed="false"><strong>Go Temporal worker</strong><small>Workflow replay + Activity execution · concurrency 4</small></button>
+      </div></div>
+      <div class="lane"><div class="lane-label">Execution</div><div class="node-row">
+        <button type="button" class="node" data-component="author" aria-pressed="false"><strong>Agent harness</strong><small>LLM turns + four generic tools + lazy skills</small></button>
+        <button type="button" class="node" data-component="sandbox" aria-pressed="false"><strong>Docker sandboxes</strong><small>Authoring Bash and immutable graph-node execution</small></button>
+        <button type="button" class="node" data-component="evaluator" aria-pressed="false"><strong>Trusted supervisor</strong><small>Package, fit, evaluate, replay and retain evidence</small></button>
+      </div></div>
+      <div class="lane"><div class="lane-label">State & learning</div><div class="node-row">
+        <button type="button" class="node" data-component="postgres" aria-pressed="false"><strong>Postgres</strong><small>Application journal, releases, approvals, outbox</small></button>
+        <button type="button" class="node" data-component="artifacts" aria-pressed="false"><strong>Local artifact store</strong><small>Content-addressed data, source, fitted state, outputs</small></button>
+        <button type="button" class="node" data-component="hindsight" aria-pressed="false"><strong>Hindsight</strong><small>Attributed task memory and relevant recall</small></button>
+        <button type="button" class="node" data-component="provider" aria-pressed="false"><strong>Model provider</strong><small>Authoring, memory extraction and embeddings</small></button>
+      </div></div>
+      <p class="path-caption" id="path-description" aria-live="polite">The browser calls the Go API. Its Temporal client submits work to the service; the worker polls the task queue. Activities access Docker, artifacts, Postgres and learning services. Human approval atomically selects the serving release.</p>
+    </div>
+    <div class="inspector" aria-live="polite" aria-atomic="true">
+      <div><h3 id="component-title">Browser frontend</h3><p id="component-boundary">Operator surface · local same-origin browser</p><a class="source" id="component-source" href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/frontend/src/graphs.mjs">Inspect implementation ↗</a></div>
+      <p id="component-description">The buildless frontend displays retained jobs, graph source, model/tool activity and evaluations. It polls about every 3.5 seconds while visible. Guided controllers submit subsequent steps while the page is open. Progress can be restored after refresh.</p>
+    </div>
+    <noscript><p class="callout">The complete reference is available below. Enable JavaScript to highlight flows and inspect components interactively.</p></noscript>
+  </section>
+
+  <section id="lifecycle">
+    <div class="section-head"><div><h2>From dataset to an approved graph</h2><p>The model authors Python nodes. The supervisor executes those nodes and computes the evaluation.</p></div></div>
+    <div class="grid-2">
+      <article class="card"><h3>Build and evaluate</h3><ol class="flow-list">
+        <li><strong>Freeze the dataset contract</strong>Declare the binary target, positive label, permitted features, provenance and thresholds. Retain deterministic train/development/audit splits.</li>
+        <li><strong>Prepare a scoped workspace</strong>Stage training/development data, a profile, the graph interface and attributed memory. Load skill bodies on demand.</li>
+        <li><strong>Author fit and serve DAGs</strong>The four-tool agent creates <code>candidate.json</code> and self-contained Python modules with <code>run(inputs, config)</code>.</li>
+        <li><strong>Pin the candidate</strong>Snapshot source, trusted wrapper, runtime image, JSON config, bindings and limits into immutable revisions.</li>
+        <li><strong>Run and measure</strong>Execute fitting on training rows, then evaluate frozen serving predictions against retained development/audit labels and requested backtests.</li>
+      </ol></article>
+      <article class="card"><h3>Approve and serve</h3><ol class="flow-list">
+        <li><strong>Inspect the evidence</strong>Review node source/configuration, model activity, evaluation gates, recall and false alarms.</li>
+        <li><strong>Record a human decision</strong>The operator clicks <em>Approve and activate</em>. A transaction validates eligibility and the expected active release, journals the reviewer, and updates the channel.</li>
+        <li><strong>Pin a batch to its release</strong>Upload a compatible serving CSV. Retain its input artifact and the approved graph/model identities.</li>
+        <li><strong>Execute the graph</strong>Temporal runs one Activity per node, in sequential topological order. Each node processes its batch using ordinary Python/ML computation.</li>
+        <li><strong>Retain outputs and signals</strong>Validate row identities, probabilities, decisions and reasons. Store outputs, trace, usage counters and aggregate review signals.</li>
+      </ol></article>
+    </div>
+    <div class="callout"><strong>Every activation is explicit.</strong> Evaluation creates an eligible candidate. The same-origin operator API records approval. An already admitted run retains its graph and fitted-model references through later activations.</div>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/pipeline/workflow.go">Build and batch orchestration ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/pipeline/store.go">Approval transaction ↗</a></p>
+  </section>
+
+  <section id="temporal">
+    <div class="section-head"><div><h2>Temporal owns durable orchestration</h2><p>The client admits work, the service retains history, and a worker executes Workflow code and Activities.</p></div></div>
+    <div class="grid-3">
+      <article class="card"><h3>Client</h3><p>The Go API and CLI use the Temporal Go SDK. Request IDs and normalized input digests make repeated admission checkable. Identical requests reuse their identity; conflicting inputs fail.</p><p>Default task queue <code>afterthought-agent-v1</code>, configurable through <code>AFTERTHOUGHT_TASK_QUEUE</code>.</p></article>
+      <article class="card"><h3>Service</h3><p>Retains Workflow histories and dispatches Workflow/Activity tasks through the queue. Completed Activity results become replay inputs.</p><p>The local Compose deployment persists the Temporal development server's SQLite database in the <code>temporal</code> volume.</p></article>
+      <article class="card"><h3>Worker</h3><p>Polls the queue and registers six Workflows with their Activities. The default maximum concurrent Activity execution count is four.</p><p>The local maintenance loop runs about every 15 seconds to reap expired containers and dispatch/reconcile reviews.</p></article>
+    </div>
+    <div class="table-wrap" style="margin-top:20px"><table>
+      <caption>Workflow responsibilities</caption><thead><tr><th scope="col">Workflow</th><th scope="col">Durable sequence</th></tr></thead><tbody>
+        <tr><td><code>AgentWorkflow</code></td><td>Setup → bounded model turns → serial tool calls → retained completion/failure.</td></tr>
+        <tr><td><code>BuildWorkflow</code></td><td>Prepare authoring → collect/package → fit → development/audit/backtest execution → evaluate.</td></tr>
+        <tr><td><code>GraphWorkflow</code></td><td>Resolve graph order → bind input artifact references → execute each node → retain results. Failure stops descendants.</td></tr>
+        <tr><td><code>BatchWorkflow</code></td><td>Resolve the approved release → run its serving graph → validate output → commit terminal state and review signal.</td></tr>
+        <tr><td><code>AutoReviewWorkflow</code></td><td>Revise an attributable serving node → evaluate → replay triggering batch → await human approval.</td></tr>
+        <tr><td><code>PolicyReviewWorkflow</code></td><td>Prepare pinned policy and observations → author a cited proposal → validate and retain it for human review.</td></tr>
+      </tbody></table></div>
+    <div class="reliability-demo">
+      <h3>Inspect a worker-restart scenario</h3><p>Illustrative sequence showing a completed node followed by a pending node when the worker restarts.</p>
+      <div class="path-controls" role="group" aria-label="Worker restart scenario">
+        <button type="button" data-recovery="recorded" aria-pressed="true">Result recorded</button>
+        <button type="button" data-recovery="stopped" aria-pressed="false">Worker stops</button>
+        <button type="button" data-recovery="replay" aria-pressed="false">Worker resumes</button>
+      </div>
+      <div class="recovery-stages"><div data-recovery-stage="0" class="recovered"><strong>Node A completed</strong>Artifact committed</div><div data-recovery-stage="1" class="recovered"><strong>History recorded</strong>Activity result retained</div><div data-recovery-stage="2"><strong>Workflow replay</strong>Prior result restored</div><div data-recovery-stage="3"><strong>Node B scheduled</strong>Pending work continues</div></div>
+      <p id="recovery-description" aria-live="polite">Node A's output is committed to the artifact store and its Activity completion is recorded in Temporal history. Node B is still pending.</p>
+    </div>
+    <div class="grid-2" style="margin-top:20px">
+      <article class="card"><h3>Replay and retries</h3><p>Workflow code is deterministic. Model calls, filesystem access, databases, Docker and wall-clock operations run inside Activities. Histories carry references and results, while large datasets/models live in artifact storage.</p><ul class="compact-list"><li>Model and tool Activities have one automatic execution attempt, a three-minute start-to-close timeout and a 15-second heartbeat timeout.</li><li>Graph-node Activities use the declared 1–3 attempts, node timeout plus 20 seconds, and a ten-second heartbeat timeout. Node Activities heartbeat every two seconds.</li><li>Committed node outputs are reused by invocation identity after a lost acknowledgement. An uncommitted node may execute again within its retry budget.</li></ul></article>
+      <article class="card"><h3>Failure semantics</h3><ul class="compact-list"><li>A journaled completed tool call returns its cached result. An uncertain shell outcome is reported so the agent can inspect state.</li><li>An in-flight model/tool Activity can fail at timeout after worker loss because its automatic attempt budget is one. Completed Activity history remains available.</li><li>Batch completion and its unique signal are committed atomically. Retries preserve one counted batch.</li><li>Expected-current checks reject stale human approvals. Review dispatch uses stable IDs and reconciles retained Workflow/build status.</li><li>Recovery depends on retained histories, application records, artifacts, and available pinned images.</li></ul></article>
+    </div>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/cmd/afterthought/worker.go">Worker registration ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/runtime/agent.go">Agent retry policy ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/execution/workflow.go">Node Activity policy ↗</a></p>
+  </section>
+
+  <section id="sandbox">
+    <div class="section-head"><div><h2>Execution boundaries are explicit</h2><p>The trusted Go host holds credentials, starts Docker containers, verifies outputs and owns approval. Agent-authored code executes within scoped resources.</p></div></div>
+    <div class="table-wrap"><table>
+      <caption>Implemented container controls</caption><thead><tr><th scope="col">Control</th><th scope="col">Authoring Bash</th><th scope="col">Graph-node execution</th></tr></thead><tbody>
+        <tr><td><strong>Purpose</strong></td><td>Inspect permitted data, write modules, run local tests.</td><td>Execute pinned fit/serve Python nodes through the trusted wrapper.</td></tr>
+        <tr><td><strong>Filesystem</strong></td><td>Read-only container root. Writable scoped <code>/workspace</code>. Read-only skills mount.</td><td>Read-only container root, <code>/input</code> and <code>/package</code> mounts.</td></tr>
+        <tr><td><strong>Network</strong></td><td><code>none</code> by default. Operator can configure networking for authoring.</td><td><code>none</code> enforced on graph runs.</td></tr>
+        <tr><td><strong>Credentials and host control</strong></td><td colspan="2">Provider secrets, host approval key, host repository and Docker socket are excluded from sandbox mounts. The trusted host invokes Docker.</td></tr>
+        <tr><td><strong>Privileges</strong></td><td colspan="2"><code>--cap-drop=ALL</code>, <code>no-new-privileges</code>, host UID/GID. Run the host under a regular user for a non-root container identity.</td></tr>
+        <tr><td><strong>CPU / memory / processes</strong></td><td>1 CPU · 512 MiB · 128 PIDs</td><td>1 CPU · 768 MiB · 128 PIDs. BLAS/OpenMP threads limited to one.</td></tr>
+        <tr><td><strong>Temporary output</strong></td><td><code>/tmp</code> tmpfs 64 MiB. Bounded captured tool output.</td><td><code>/tmp</code> 128 MiB; <code>/output</code> 80 MiB, <code>noexec</code>. Bounded framed stdout transport, Docker logging disabled.</td></tr>
+        <tr><td><strong>Timeout</strong></td><td>1–120 seconds, default 30.</td><td>1–300 seconds per node, default 60.</td></tr>
+        <tr><td><strong>Reproducibility</strong></td><td>Retained sandbox image ID, tool intent/results and transcript references.</td><td>Pinned image, source, wrapper, config, graph and input artifacts. Invocation identity binds execution.</td></tr>
+      </tbody></table></div>
+    <div class="grid-2" style="margin-top:20px">
+      <article class="card"><h3>File tools and output validation</h3><p><code>read</code>, <code>edit</code> and <code>write</code> use a scoped <code>os.Root</code>. They reject traversal and special files, bound content, and require exactly one match for edits. Skill access uses a separate read-only root.</p><p>The trusted node wrapper serializes results. The host checks identity, protocol version, JSON shape, size and checksums before accepting output. Final predictions must cover every input row.</p></article>
+      <article class="card"><h3>Operator and data boundary</h3><p>The HTTP server binds to loopback. Mutations validate origin, and browser approvals require an exact same-origin request, reviewer identity and explicit decision. Keyed host clients are also supported.</p><p>The local application assumes a trusted operator. Permitted training/development content can be read by the agent, so selected features and prepared inputs determine model exposure. Audit data stays in supervisor storage. Public multi-user deployment needs authentication and stronger isolation.</p></article>
+    </div>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/harness/tools.go">Authoring sandbox ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/execution/engine.go">Graph sandbox and validation ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/webapi/server.go">Origin checks ↗</a></p>
+  </section>
+
+  <section id="storage">
+    <div class="section-head"><div><h2>State, artifacts and remembered evidence</h2><p>Each store has a defined role in recovery, provenance and learning.</p></div></div>
+    <div class="grid-2">
+      <article class="card"><h3>Application Postgres</h3><p>Authoritative application records and transactional state. JSONB payloads retain graph/build metadata alongside relational identities and indexes.</p>
+        <details open><summary>Agent and admission journals</summary><p><code>agent_api_requests</code>, <code>agent_sessions</code>, <code>agent_model_calls</code>, <code>agent_tool_calls</code> retain input identities, session state, usage and tool outcomes. <code>agent_memory</code> holds attributed events and delivery receipts.</p></details>
+        <details open><summary>Dataset, release and execution state</summary><p><code>agent_datasets</code>, <code>graph_builds</code>, <code>graph_releases</code>, <code>graph_channels</code>, <code>graph_approvals</code>, <code>graph_batches</code> bind data contracts, candidates, active pointers, reviewer decisions and batch identities.</p></details>
+        <details><summary>Review and policy state</summary><p><code>graph_review_settings</code>, <code>graph_batch_signals</code>, <code>graph_auto_reviews</code>, <code>policy_documents</code>, <code>policy_channels</code>, <code>policy_proposals</code> and <code>policy_pattern_decisions</code> retain review windows, proposals and policy versions.</p></details>
+      </article>
+      <article class="card"><h3>Local content-addressed artifacts</h3><p><code>.afterthought/</code> holds source packages, immutable dataset splits, transcripts, fitted model state, batch inputs, outputs, node commit records and scoped authoring workspaces.</p><p>Artifact references contain a SHA-256 digest and size. Graph/node identities bind their immutable execution inputs. Large content remains in this store while Temporal histories carry references.</p><h4 style="margin-top:25px">Other durable stores</h4><p><strong>Temporal</strong> stores event histories in its own local SQLite volume. <strong>Hindsight</strong> persists its extracted memories in its service-owned database volume.</p><p>Preserve application Postgres, local artifacts, Temporal and Hindsight volumes together, plus access to pinned Docker images.</p></article>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>How Hindsight feeds the next revision</h3><ol class="flow-list">
+      <li><strong>Record the source event</strong>Postgres retains execution measurements, failures, human feedback and model summaries with source attribution and deduplication keys.</li>
+      <li><strong>Deliver through the outbox</strong>Stable document IDs and operation UUIDs make delivery retries repeatable. The outbox acknowledges acceptance while Hindsight processes asynchronously.</li>
+      <li><strong>Recall for authoring</strong>Setup combines recent journal evidence with task-scoped Hindsight recall and supporting source facts. Derived observations retain their uncertainty.</li>
+      <li><strong>Evaluate the resulting change</strong>Development evidence informs tuning. Original audit and benchmark reports remain with the supervisor/operator. Human approval and review outcomes become attributed evidence.</li>
+    </ol><p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/memory/hindsight.go">Hindsight adapter ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/storage/postgres.go">Journal and outbox ↗</a></p></div>
+    <div class="callout">Hindsight extraction, embeddings and reflection have separate provider usage. Authoring also consumes model tokens. The zero-token property applies to approved graph serving, which executes without model or memory clients.</div>
+  </section>
+
+  <section id="learning">
+    <div class="section-head"><div><h2>Learning is measured across versions</h2><p>The prepared claims demo adds examples over three rounds and changes one fit node each time.</p></div></div>
+    <div class="grid-2">
+      <article class="card"><h3>The original 400 claims</h3><div class="split" aria-label="240 training rows, 80 development rows, 80 audit rows"><div class="train">240 train</div><div class="dev">80 dev</div><div class="audit">80 audit</div></div><p>Training fits the model. Development helps choose changes and enforces F1 nonregression against the parent. The same original audit cases check earlier behavior after each round.</p><p><strong>Original audit accuracy</strong> measures correct classifications on those 80 audit cases. For example, 60 correct gives 75%.</p></article>
+      <article class="card"><h3>The separate 560-case benchmark</h3><p>Every version runs on 280 fraud-labelled and 280 legitimate-labelled reserved cases. Benchmark labels and results remain outside authoring and improvement memory.</p><p>The main chart measures benchmark accuracy. Fraud recall counts fraud caught; false alarms count legitimate cases flagged. For example, 263 fraud caught plus 172 legitimate cleared gives 435 / 560, or 77.7% accuracy.</p><p class="subtle">These numbers illustrate the calculation. Each experiment shows its own recorded results.</p></article>
+    </div>
+    <div class="table-wrap" style="margin-top:18px"><table><caption>Prepared learning sequence</caption><thead><tr><th scope="col">Version</th><th scope="col">Added dataset</th><th scope="col">Cumulative training</th><th scope="col">Agent operation</th></tr></thead><tbody>
+      <tr><td>Initial</td><td>400 historical claims</td><td>240 rows</td><td>Author fit and serve DAGs.</td></tr>
+      <tr><td>Round 1</td><td>600 more historical claims</td><td>600 rows</td><td>Tune the fit node and retrain.</td></tr>
+      <tr><td>Round 2</td><td>196 challenge/control cases</td><td>716 rows</td><td>Tune the same fit node with cumulative data.</td></tr>
+      <tr><td>Round 3</td><td>140 novel-pattern/control cases</td><td>800 rows</td><td>Tune again and compare all versions.</td></tr>
+    </tbody></table></div>
+    <div class="grid-2" style="margin-top:18px">
+      <article class="card contract"><h3>Node-level revision contract</h3><p>Pin a parent release and choose <code>fit:ID</code> or <code>serve:ID</code>. Only the selected node's source/configuration may change. Packaging checks topology, bindings, limits and all protected revisions.</p><p>A fit-node change retrains the model. A serving-node change reuses the pinned fitted artifact. Compatible supplemental training/development partitions can accumulate for fitting. The original development/audit evaluation stays fixed.</p></article>
+      <article class="card"><h3>Gates and interpretation</h3><p>Demo gates require precision ≥50%, recall ≥30%, false-positive rate ≤50%, majority-baseline accuracy, and development F1 at least the parent's value. Original development/audit gates determine activation eligibility.</p><p>The data sequence is prepared; authored code and measured scores come from real execution. A completed rejected candidate can feed a later revision. Scores may rise or fall. The balanced benchmark differs from the original file's roughly 6% fraud prevalence.</p><p>Repeated comparison consumes holdout independence. Final generalization claims need fresh evaluation and verified target semantics.</p></article>
+    </div>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/docs/demo-learning-rounds.md">Learning demo and label provenance ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/dataset/learning.go">Split compatibility and overlap checks ↗</a></p>
+  </section>
+
+  <section id="review">
+    <div class="section-head"><div><h2>Automatic proposals, human decisions</h2><p>Auto-review is opt-in for a scope with an approved active graph. Enabling starts a fresh counter.</p></div></div>
+    <div class="grid-3">
+      <article class="card"><h3>Collect</h3><p>One finished serving CSV counts as one batch, including failed attempts once per request ID. Training and backtest jobs are excluded from this counter.</p><p>The worker checks about every 15 seconds and claims windows of 50. At five finished batches per minute, collection takes about ten minutes.</p></article>
+      <article class="card"><h3>Choose the review</h3><p>An attributable execution failure or invalid final output selects one serving node for repair. Runtime repair takes priority.</p><p>A fresh numeric departure can request a policy review. A healthy window records an observation. <em>Review now</em> consumes 1–50 available signals under existing guards.</p></article>
+      <article class="card"><h3>Bound the attempt</h3><p>One automatic authoring attempt, up to 12 model turns, a ten-minute cooldown, and one pending automatic proposal per parent release.</p><p>Task locks and a consumed sequence cursor coordinate concurrent completion and review claims. Existing pending work can delay another proposal.</p></article>
+    </div>
+    <div class="grid-2" style="margin-top:18px">
+      <article class="card"><h3>Robustness repair</h3><p>Give the author the affected node, sanitized aggregate diagnostics and attributed memory. Retain the triggering batch in supervisor storage.</p><p>Run original development/audit gates, enforce parent development F1, verify a changed selected node and successfully replay the failed batch. The eligible result waits for human activation.</p><p>Replay checks completion and prediction validity for that input. Accuracy on the repaired condition requires labelled evidence.</p></article>
+      <article class="card"><h3>Policy and emerging-pattern review</h3><p>Compare numeric batch values with frozen training ranges. Signals need at least ten training observations and at least three affected rows representing 10% of the batch, beyond the configured margin.</p><p>The agent proposes an investigator procedure with policy-page quotations and observed evidence IDs. Missing knowledge pauses at <code>needs_policy</code>. A human assesses the hypothesis and approves or dismisses the amendment.</p><p>The guided policy controller requests a serving-output-node revision after publication. Graph evaluation and a separate human approval precede activation.</p></article>
+    </div>
+    <details class="card" style="margin-top:18px"><summary>Numerical detector and PDF limits</summary><p>The departure margin is <code>max(25% of training range, 1% of absolute maximum, 0.01)</code>. Detection covers numeric range departures. Categorical novelty, correlations and label-based accuracy need additional analysis. Reviewed dataset/feature/direction signatures are suppressed for the current policy version.</p><p>Poppler extracts searchable PDFs with limits of 8 MiB input, 30 pages, 128 KiB text and 20 seconds. Versioned numbered policy pages are staged in <code>knowledge/company-policy.json</code>. Proposal validation checks bounded fields, exact whitespace-normalized page quotations and observed evidence references.</p></details>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/pipeline/review.go">Review dispatcher ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/pipeline/novelty.go">Numeric signals ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/pipeline/policy_workflow.go">Policy proposal workflow ↗</a></p>
+  </section>
+
+  <section id="contracts">
+    <div class="section-head"><div><h2>Contracts at the system boundaries</h2><p>Explicit data and graph interfaces let the supervisor validate independently of the agent's summary.</p></div></div>
+    <div class="grid-2">
+      <article class="card"><h3>Dataset and node interface</h3><p>Headered CSV, binary target, at least 50 rows and ten rows per class. Limits are 64 MiB, 100,000 rows, 128 source columns, 64 selected features and 16 KiB per cell.</p><p>Feature types are inferred as numbers, booleans, strings and nullable values. Supplemental datasets share scope, label mapping and ordered feature types. Evaluation-only data is reserved for backtests.</p><pre><code>candidate.json · version v2
+  fit   → at least one node
+  serve → at least two connected nodes
+  each graph → at most 16 nodes
+
+run(inputs, config) → JSON result
+bindings → $input / predecessor / $fit</code></pre><p>Each node declares source, dependencies, bindings, config, timeout and attempts. Fitted state flows through the fit artifact.</p></article>
+      <article class="card"><h3>Serving output</h3><pre><code>{
+  "predictions": [{
+    "row_id": "claim-row-id",
+    "probability": 0.72,
+    "decision": "escalate",
+    "reasons": [
+      "Request an independent repair estimate."
+    ]
+  }]
+}</code></pre><p>Require one prediction per input row, matching IDs, finite probabilities in [0, 1], a supported <code>accept</code>/<code>escalate</code>/<code>reject</code> decision, and nonempty reasons.</p><p>Metrics use probabilities at the frozen threshold. Human review assesses the business meaning of reasons and recommendations.</p></article>
+    </div>
+    <div class="card" style="margin-top:18px"><h3>Primary HTTP surface</h3>
+      <div class="endpoint"><strong>Data and authoring</strong><span><code>POST /api/datasets</code> · <code>POST /api/bootstraps</code> · <code>GET /api/bootstraps/{id}</code> · <code>GET /api/sessions/{id}</code></span></div>
+      <div class="endpoint"><strong>Inspect and revise</strong><span><code>GET /api/releases/{id}</code> · <code>GET /api/releases/{id}/nodes/{phase}/{node}</code> · <code>POST /api/releases/{id}/tune</code></span></div>
+      <div class="endpoint"><strong>Approve and run</strong><span><code>POST /api/releases/{id}/approve</code> · <code>POST /api/releases/{id}/runs</code> · <code>GET /api/graph-runs/{id}/output</code></span></div>
+      <div class="endpoint"><strong>Review and knowledge</strong><span><code>GET/PUT /api/auto-review</code> · <code>POST /api/auto-review/run</code> · <code>GET/POST /api/policies</code> · <code>POST /api/policy-proposals/{id}/decision</code></span></div>
+      <div class="endpoint"><strong>Prepared demo</strong><span><code>GET /api/learning-demo</code> reads the local bundle. <code>GET /api/bootstraps?task=...</code> restores retained learning jobs.</span></div>
+      <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/webapi/pipeline.go">Graph API ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/internal/webapi/policy.go">Policy API ↗</a></p>
+    </div>
+  </section>
+
+  <section id="deployment">
+    <div class="section-head"><div><h2>The local deployment</h2><p>One trusted host runs the Go application and Docker. The server can embed the worker or connect to a separately running worker.</p></div></div>
+    <div class="table-wrap"><table><caption>Services and persistence in Compose</caption><thead><tr><th scope="col">Service</th><th scope="col">Local endpoint</th><th scope="col">Persistence / implementation</th></tr></thead><tbody>
+      <tr><td><strong>Go UI/API + worker</strong></td><td><code>127.0.0.1:8080</code></td><td>Go 1.25+ binary. Buildless frontend. Local <code>.afterthought/</code> artifact directory.</td></tr>
+      <tr><td><strong>Application Postgres</strong></td><td><code>127.0.0.1:55432</code></td><td><code>postgres:17.6-alpine</code> · named <code>postgres</code> volume.</td></tr>
+      <tr><td><strong>Temporal</strong></td><td><code>:7233</code> gRPC · <code>:8233</code> UI, loopback</td><td><code>temporalio/temporal:1.4.1</code> development server · <code>/data/temporal.db</code> in named <code>temporal</code> volume.</td></tr>
+      <tr><td><strong>Hindsight</strong></td><td><code>:8888</code> API · <code>:9999</code> UI, loopback</td><td><code>hindsight:1.2.0</code> · named <code>hindsight</code> volume at <code>/home/hindsight/.pg0</code>.</td></tr>
+      <tr><td><strong>Ephemeral execution</strong></td><td>Host Docker engine</td><td>Generic <code>python:3.12-bookworm</code> authoring environment and <code>afterthought-ml:v1</code> numerical runtime. Resolved image IDs are retained.</td></tr>
+    </tbody></table></div>
+    <div class="grid-2" style="margin-top:18px">
+      <article class="card"><h3>Start and inspect</h3><pre><code>cp -n .env.example .env
+# Set AFTERTHOUGHT_MODEL_API_KEY in .env
+docker pull python:3.12-bookworm
+make demo
+
+# With the server running
+# http://127.0.0.1:8080/graphs.html
+# http://127.0.0.1:8080/architecture.html</code></pre><p>Default authoring model <code>gpt-6.1-sol</code> uses the Responses adapter with <code>store:false</code>. Hindsight defaults to <code>gpt-4.1-mini</code>, OpenAI embeddings and RRF ranking.</p><p>Use <code>serve --with-worker=false</code> with a separately running <code>make worker</code>. Both must use compatible queue, database and artifact configuration.</p><p><code>make down</code> retains volumes. Keep credentials and generated state in ignored local files.</p></article>
+      <article class="card"><h3>Verification and current scope</h3><pre><code>make test         # Go race + Node tests
+make integration  # Real local services + mock providers
+go vet ./...</code></pre><p>Coverage includes graph execution, dataset isolation, cumulative learning, approval rejection, retry identities, history replay and automatic-review gates. Integration tests require local services and runtime images.</p><p>The implementation targets local binary tabular classification. Follow-on work includes authenticated shared access, distributed artifacts/images, entity/time split policies, final-audit rotation and richer drift/verified-feedback triggers.</p><p>Guided browser steps resume after refresh. Already submitted Temporal jobs continue while the page is closed. Further guided handoffs require the page to resume.</p></article>
+    </div>
+    <p class="source"><a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/compose.yaml">Compose topology ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/README.md">Setup guide ↗</a> · <a href="https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/docs/technical-design.md">Full technical design ↗</a></p>
+  </section>
+  <footer class="footer"><span>AfterThought · Architecture reference<br>Source snapshot 2f9c17f · 7 November 2026</span><span>Self-contained HTML · works offline<br>Interactive diagrams explain documented behavior.</span></footer>
+</main>
+<script>
+  const sourceRoot = 'https://github.com/jakartasipirok/AfterThought/blob/2f9c17f/';
+  const components = {
+    browser: { title: 'Browser frontend', boundary: 'Operator surface · local same-origin browser', source: 'frontend/src/graphs.mjs', description: 'The buildless frontend displays retained jobs, graph source, model/tool activity and evaluations. It polls about every 3.5 seconds while visible. Guided controllers submit subsequent steps while the page is open. Progress can be restored after refresh.' },
+    api: { title: 'Go HTTP API + Temporal client', boundary: 'Trusted host · request admission', source: 'internal/webapi/pipeline.go', description: 'Validates CSVs and request contracts, retains normalized input identities, and starts stable Temporal workflow IDs. The client submits work to the service. The API serves the frontend and records operator decisions through same-origin routes.' },
+    approval: { title: 'Human approval', boundary: 'Trusted operator · transactional activation', source: 'internal/pipeline/store.go', description: 'Checks reviewer identity, explicit decision, evaluation eligibility and the expected current release. A serialized transaction records the approval and changes the active pointer. Each candidate requires its own decision.' },
+    temporal: { title: 'Temporal service', boundary: 'Durable orchestration · own history store', source: 'compose.yaml', description: 'Retains event histories and delivers Workflow and Activity tasks. The local development server persists SQLite in its named volume. Workflow replay reconstructs progress from history and completed Activity results.' },
+    worker: { title: 'Go Temporal worker', boundary: 'Trusted host · queue consumer', source: 'cmd/afterthought/worker.go', description: 'Registers Agent, Build, Graph, Batch, AutoReview and PolicyReview workflows plus their Activities. It polls the configured queue with a maximum of four concurrent Activities. Activities perform I/O and execution. Maintenance dispatches reviews and reaps expired containers.' },
+    author: { title: 'Agent harness', boundary: 'Model-driven authoring · scoped workspace', source: 'internal/runtime/agent.go', description: 'Starts with an empty domain library, metadata for lazily loaded skills, permitted data and attributed memory. The model sees read, bash, edit and write. Bounded model turns author modules and test them. Tool intentions and outcomes are journaled.' },
+    sandbox: { title: 'Docker sandboxes', boundary: 'Agent-authored code · bounded host resources', source: 'internal/execution/engine.go', description: 'Authoring Bash receives a writable workspace and read-only skills. Graph nodes receive pinned read-only packages and inputs, with networking disabled. Containers have CPU, memory, process, filesystem and timeout limits. The host validates node output before committing it.' },
+    evaluator: { title: 'Trusted supervisor', boundary: 'Host-owned evidence · reserved labels', source: 'internal/pipeline/workflow.go', description: 'Packages immutable revisions, executes fit/serve graphs, compares predictions with reserved labels and stores measured reports. Selected-node tuning preserves protected revisions and topology. Automatic repair also replays the retained triggering batch.' },
+    postgres: { title: 'Application Postgres', boundary: 'Authoritative journal · transactions and identities', source: 'internal/pipeline/store.go', description: 'Stores dataset metadata, builds, releases, approvals, active pointers, batches, review state and policy versions, alongside agent journals and a memory outbox. Atomic operations and task locks protect activation and review-window consumption.' },
+    artifacts: { title: 'Local artifact store', boundary: 'Content-addressed evidence · host filesystem', source: 'internal/storage/files.go', description: 'Retains source, wrappers, data splits, transcripts, fitted state and results by digest. Invocation commit records allow retries to reuse completed node output. Temporal and Postgres reference artifacts. Backups must retain these files along with database and history state.' },
+    hindsight: { title: 'Hindsight memory', boundary: 'Learning service · attributed recall', source: 'internal/memory/hindsight.go', description: 'Receives source-attributed events through the Postgres outbox and recalls relevant task-scoped evidence before authoring. Stable document and operation identities support delivery retries. Extraction, embeddings and reflection consume separate provider usage.' },
+    provider: { title: 'Model provider', boundary: 'External inference · credentials on trusted host/services', source: 'internal/model/responses.go', description: 'The authoring client defaults to GPT-6.1 Sol through the Responses API with store:false and retained local response items for tool continuity. Hindsight separately uses inference and embeddings. Approved graph serving uses code and fitted artifacts.' }
+  };
+  const paths = {
+    all: { nodes: [], description: 'The browser calls the Go API. Its Temporal client submits work to the service; the worker polls the task queue. Activities access Docker, artifacts, Postgres and learning services. Human approval atomically selects the serving release.' },
+    author: { nodes: ['browser', 'api', 'temporal', 'worker', 'author', 'sandbox', 'evaluator', 'postgres', 'artifacts', 'hindsight', 'provider'], description: 'CSV → API admission → Temporal BuildWorkflow → agent authoring with memory and model calls → pinned Docker fit/serve execution → measured evaluation retained in Postgres and artifacts. The candidate then waits for operator activation.' },
+    serve: { nodes: ['browser', 'api', 'approval', 'temporal', 'worker', 'sandbox', 'evaluator', 'postgres', 'artifacts'], description: 'Human-approved release + serving CSV → API admission → Temporal BatchWorkflow / GraphWorkflow → pinned Docker nodes → validated predictions and batch signals. This path uses zero serving-model calls and zero serving-model tokens.' },
+    improve: { nodes: ['worker', 'postgres', 'temporal', 'author', 'sandbox', 'evaluator', 'artifacts', 'hindsight', 'provider', 'browser', 'approval', 'api'], description: 'Finished-batch signals → worker review dispatcher → runtime repair or policy proposal → attributed recall and bounded authoring → evaluation/replay → browser inspection → explicit human decision. Review outcomes feed the memory outbox.' }
+  };
+  document.querySelectorAll('[data-component]').forEach(button => {
+    button.addEventListener('click', () => {
+      const component = components[button.dataset.component];
+      document.querySelectorAll('[data-component]').forEach(node => node.setAttribute('aria-pressed', String(node === button)));
+      document.querySelector('#component-title').textContent = component.title;
+      document.querySelector('#component-boundary').textContent = component.boundary;
+      document.querySelector('#component-description').textContent = component.description;
+      document.querySelector('#component-source').href = sourceRoot + component.source;
+    });
+  });
+  document.querySelectorAll('[data-path]').forEach(button => {
+    button.addEventListener('click', () => {
+      const path = paths[button.dataset.path];
+      document.querySelectorAll('[data-path]').forEach(control => control.setAttribute('aria-pressed', String(control === button)));
+      document.querySelectorAll('[data-component]').forEach(node => node.classList.toggle('is-in-path', path.nodes.includes(node.dataset.component)));
+      document.querySelector('#path-description').textContent = path.description;
+    });
+  });
+  const recovery = {
+    recorded: { count: 2, description: "Node A's output is committed to the artifact store and its Activity completion is recorded in Temporal history. Node B is still pending." },
+    stopped: { count: 2, description: 'The worker process stops before Node B is scheduled. Temporal retains the recorded history. Application Postgres and artifact storage retain their committed evidence. Processing awaits an available worker on the same task queue.' },
+    replay: { count: 4, description: 'A restarted worker replays the Workflow using the recorded Node A Activity result, then schedules Node B. If acknowledgement of a committed node output was lost, its invocation identity allows the executor to reuse that output when retried.' }
+  };
+  document.querySelectorAll('[data-recovery]').forEach(button => {
+    button.addEventListener('click', () => {
+      const state = recovery[button.dataset.recovery];
+      document.querySelectorAll('[data-recovery]').forEach(control => control.setAttribute('aria-pressed', String(control === button)));
+      document.querySelectorAll('[data-recovery-stage]').forEach(stage => stage.classList.toggle('recovered', Number(stage.dataset.recoveryStage) < state.count));
+      document.querySelector('#recovery-description').textContent = state.description;
+    });
+  });
+  const navigation = [...document.querySelectorAll('nav a')];
+  function updateNavigation() {
+    let active = navigation[0];
+    for (const link of navigation) {
+      if (document.querySelector(link.hash).getBoundingClientRect().top <= 140) active = link;
+    }
+    for (const link of navigation) {
+      if (link === active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    }
+  }
+  window.addEventListener('scroll', updateNavigation, { passive: true });
+  updateNavigation();
+  document.querySelector('#print').addEventListener('click', () => window.print());
+  window.addEventListener('beforeprint', () => {
+    document.querySelectorAll('details').forEach(detail => { detail.dataset.prePrintOpen = String(detail.open); detail.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    document.querySelectorAll('details').forEach(detail => { detail.open = detail.dataset.prePrintOpen === 'true'; });
+  });
+</script>
+</body>
+</html>

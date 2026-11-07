@@ -201,6 +201,7 @@ The agent's Bash receives only the workspace and read-only skills. The Docker so
 
 | Guide | Use it for |
 | --- | --- |
+| [Interactive architecture](frontend/architecture.html) | Full system map, Temporal reliability, sandbox controls, storage and API reference. Open `/architecture.html` on the running server or open the HTML file directly. |
 | [Presenter script](docs/demo-90-seconds.md) | A prepared 60–90 second demo within a six-minute talk |
 | [Repeated learning](docs/demo-learning-rounds.md) | CSV preparation, rounds, metrics, explanations, refresh, and replay |
 | [Manual graph walkthrough](docs/demo.md) | Bootstrap and tune a graph using your own CSV |

@@ -17,12 +17,13 @@ export function initGuidedDemo({ api, getTask, select }) {
     const task = new URLSearchParams(location.search).get("task");
     if (/^learn-[a-z0-9-]{8,40}$/.test(task) && task !== saved?.task) saved = { version: 2, task, actor: "", restore: true };
   }
-  let snapshot, storyHTML = "", selectedTarget = "", checkedSavedScope = false;
+  let snapshot, storyHTML = "", storySession = "", selectedTarget = "", checkedSavedScope = false;
   document.body.dataset.demoView = "story";
   function render(next) {
     snapshot = next;
     const { record, busy, error } = next;
     const learning = record?.version === 2 || (!record && $("#guidedMode")?.value === "learning");
+    document.body.dataset.learningView = String(learning);
     const stage = learning && !record ? learningStage(null, {}) : next.stage;
     const elsewhere = record && record.task !== getTask();
     $("#guidedStartForm").hidden = Boolean(record);
@@ -40,9 +41,13 @@ export function initGuidedDemo({ api, getTask, select }) {
     document.body.dataset.demoStage = elsewhere ? "elsewhere" : stage.id;
     const html = learning ? learningStory(next) : demoStory(next);
     if (html !== storyHTML) {
-      const open = [...$("#guidedStory").querySelectorAll("details")].map(node => node.open);
+      const detailKey = (node, index, session) => node.dataset?.learningDetail || (node.dataset?.trace ? `${session}/${node.dataset.trace}` : `detail-${index}`);
+      const open = new Set([...$("#guidedStory").querySelectorAll("details")].flatMap((node, index) => node.open ? [detailKey(node, index, storySession)] : []));
+      const focusedRound = document.activeElement?.dataset?.roundCard;
       $("#guidedStory").innerHTML = html; storyHTML = html;
-      [...$("#guidedStory").querySelectorAll("details")].forEach((node, index) => { if (index < open.length) node.open = open[index]; });
+      storySession = next.evidence.selectedJob?.session_id || "";
+      [...$("#guidedStory").querySelectorAll("details")].forEach((node, index) => { node.open = open.has(detailKey(node, index, storySession)); });
+      if (focusedRound !== undefined) $("#guidedStory").querySelector(`[data-round-card="${focusedRound}"]`)?.focus({ preventScroll: true });
     }
     $("#guidedStory").hidden = Boolean(elsewhere);
     if (record && !$("#guidedActor").value) $("#guidedActor").value = record.actor;

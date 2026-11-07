@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AfterThought · Claims operations</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>CLAIMS INTELLIGENCE</small></div></div>
+      <div class="side-label">WORKSPACE</div>
+      <a class="nav-link active" href="#overview"><span>▦</span> Overview</a>
+      <a class="nav-link" href="#claim-table"><span>☷</span> Claim queue</a>
+      <div class="side-spacer"></div>
+      <div class="side-note"><span class="pulse"></span> Demo environment<br><small>Motor claims · local workflow</small></div>
+      <div class="side-footer">RULESET<br><strong>Motor triage v1.0</strong><small>Deterministic · 0 LLM calls per claim</small></div>
+    </aside>
+    <main class="main" id="overview">
+      <header class="topbar"><div class="breadcrumb">Operations <span>/</span> Claims overview</div><div class="top-right"><span class="data-pill">● Source replay</span><span class="avatar">AO</span></div></header>
+      <div class="content">
+        <div class="page-title"><div><div class="eyebrow">MOTOR CLAIM TRIAGE</div><h1>Claims overview</h1><p>Check the claim. Route exceptions. Close the loop.</p></div><button id="resetButton" class="secondary-button">Reset demo decisions</button></div>
+        <div class="notice"><span class="notice-icon">i</span><span><strong>Demo policy.</strong> Business rules and thresholds are fictional examples. Review flags are not fraud findings, and “Continue” is not payment approval.</span></div>
+        <section class="metrics" id="metrics" aria-label="Claim outcomes"></section>
+        <section class="panel flow-panel"><div class="section-heading"><div><span class="eyebrow">END-TO-END PROCESS</span><h2>Five-stage claim flow</h2></div><div class="inline-meta">Versioned checks <span>·</span> Evidence at every stage</div></div><div class="flow" id="flow"></div></section>
+        <section class="panel queue-panel" id="claim-table"><div class="section-heading queue-heading"><div><span class="eyebrow">WORK QUEUE</span><h2>Motor claims</h2><p>Source records are replayed through the active ruleset.</p></div><span class="record-count" id="recordCount"></span></div><div class="queue-controls"><div class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="Search claim ID, agent, or vendor" aria-label="Search claims"></div><select id="outcomeFilter" aria-label="Filter by outcome"><option value="All">All outcomes</option><option value="Review">Review</option><option value="Continue">Continue</option><option value="Hold">Hold</option></select><select id="sortOrder" aria-label="Sort claims"><option value="recent">Latest received</option><option value="amount">Highest amount</option></select></div><div class="table-scroll"><table><thead><tr><th>CLAIM ID</th><th>LOSS DATE</th><th>AMOUNT</th><th>SEVERITY</th><th>OUTCOME</th><th>ROUTE</th><th></th></tr></thead><tbody id="claimRows"></tbody></table></div><div class="pagination"><span id="pageSummary"></span><div><button id="prevPage" aria-label="Previous page">‹</button><button id="nextPage" aria-label="Next page">›</button></div></div></section>
+        <div class="source-note">Dataset: Kaggle Insurance Claims Fraud Data · 1,574 motor transactions. Source outcome codes are excluded from screening. No verified fraud labels are available.</div>
+      </div>
+    </main>
+  </div>
+  <div id="scrim" class="scrim" hidden></div>
+  <aside id="drawer" class="drawer" aria-label="Claim details" aria-hidden="true"></aside>
+  <script type="module" src="src/app.mjs"></script>
+</body>
+</html>

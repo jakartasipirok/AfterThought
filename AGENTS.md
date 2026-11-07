@@ -29,7 +29,7 @@ Use idiomatic Go: lowercase packages, PascalCase exports, camelCase private iden
 
 Expose exactly `read`, `bash`, `edit`, `write`. Seed no business nodes; load skills lazily. Keep I/O/model calls in Activities and Workflow code deterministic. Preserve journal/outbox identities and distinguish memory observations from verified human feedback.
 
-Withhold audit data from authoring and labels from serving. Pin source/wrapper/image/config/model/input artifacts. Tuning preserves every unselected revision. Serving has no model/memory/network access. Evaluation never activates a release: explicit human approval with the host-only key is mandatory.
+Withhold audit data from authoring and labels from serving. Pin source/wrapper/image/config/model/input artifacts. Tuning preserves every unselected revision. Serving has no model/memory/network access. Evaluation never activates a release. The local frontend records explicit human approval through a same-origin click and reviewer identity. Preserve evaluation gates, expected-current checks, and the approval journal. Keyed host clients remain supported.
 
 Never commit secrets, raw datasets, or session state. Exclude source PII from prompts/screenshots. Keep fictional claims replay separate; exclude `CLAIM_STATUS` from screening. Review is not a fraud finding; recommendations are not settlement actions.
 

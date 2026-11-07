@@ -36,13 +36,7 @@ See the [demo walkthrough](docs/demo.md) for a presentation sequence. The [Techn
 1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
 2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
 3. Inspect each node's pinned source/configuration, execution evidence, and evaluation reports. Select one node and request a revision. Every other node and the topology must remain unchanged; serving-node edits reuse the frozen fitted artifact. Candidates that regress in development F1 or fail gates are ineligible.
-4. A human reviews the eligible candidate and explicitly approves activation. Read the host-only approval key in your own terminal:
-
-   ```sh
-   bin/afterthought approval-code
-   ```
-
-   Enter that key and your reviewer identity in the approval form and confirm the named release. The key is stored in ignored `.afterthought/operator-approval.key`, never mounted into agent/node containers, and never returned by the API. Approval uses an expected-current-release check and an atomic audit record. Each revision needs a separate human approval.
+4. Review the eligible candidate, enter your name, and click **Approve and activate** in the local frontend. The click records your explicit decision. The API checks the same browser origin, evaluation gates, and expected current release, then records activation atomically. Each revision requires its own approval.
 5. Upload an inference CSV and run an approved release. The graph processes the batch without a model or Hindsight client; nodes have no network or provider credentials. Download the predictions, reasons, node trace, and zero-token counters. Existing runs remain pinned when a later release is activated.
 
 The general authoring page still supports prompts, optional dataset URLs, tool traces/files, human feedback, and Hindsight recall. Executable graph intake currently uses CSV upload, not automatic Kaggle ingestion.
@@ -53,19 +47,22 @@ This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, e
 
 `bin/afterthought serve --with-worker=false` serves the UI/API with a separately running worker. Use `--addr 127.0.0.1:8081` or `--ui-dir frontend` to change local settings. The server accepts loopback bindings only; it is a local demo with access to agent execution, not an authenticated public service. API calls use the same origin and never send the provider key to the browser.
 
-## Quick policy-learning demo
+## Frontend learning demo
 
-Restart the server with `make demo`, then open **Graph Runtime**. PDF extraction needs Poppler (`brew install poppler` on macOS; `apt-get install poppler-utils` on Debian).
+Open **Graph Runtime**, enter your name, and click **Start demo**. The page tells the story through **Dataset & knowledge**, **Workflow**, and **Learning & results**. The [60–90 second presenter script](docs/demo-90-seconds.md) includes preparation and narration.
 
-1. Click **Prepare insurance demo**. This selects 1,000 fictional motor claims, a label-free batch, and the [sample policy PDF](frontend/assets/demo-company-policy.pdf).
-2. Under **Company policy**, enter your name and upload the selected PDF. Confirm the generated label definition, then upload and freeze the CSV.
-3. Author and evaluate a graph. Expand **Agent activity** for recorded model responses, tool requests/results, and provider token counters. These update after calls complete; they are not token streaming.
-4. Review the evaluation and explicitly approve the graph using your host code.
-5. Click **Prepare emerging-pattern batch**, then **Run graph**. The synthetic evidence-reuse count shifts from 0–2 to 8–12; serving still makes zero LLM calls.
-6. Click **Review now**. Expand **Review activity** while the agent reads policy/evidence and drafts an amendment. This checks available batches without enabling or waiting for the 50-batch cadence; cooldown and pending-proposal gates still apply.
-7. Review the hypothesis, exact policy quotes, uncertainty, and proposed addition. Record your assessment and note, then approve the policy amendment or dismiss it with your human identity, host code, and explicit confirmation.
+PDF extraction needs Poppler (`brew install poppler` on macOS or `apt-get install poppler-utils` on Debian). Start the server with `make demo`. After backend changes, stop the previous server with Ctrl+C and run it again.
 
-Policy approval publishes a new knowledge version for subsequent graph authoring. It does **not** change the active graph. To apply it in code, select a node, request a revision using the updated policy, evaluate, and approve that graph separately. The source PDF remains unchanged; **Current policy** downloads the version including approved additions as Markdown.
+1. The frontend uploads 1,000 generated claims and the fictional company policy, then starts real graph authoring and evaluation.
+2. Inspect the graph and measured evaluation, then click **Approve and activate**. Your reviewer name carries over from setup.
+3. The page automatically runs an ordinary batch and an emerging-pattern batch, then requests an immediate review. The demo changes evidence reuse from 0–2 to 8–12. The normal scheduled cadence remains 50 batches.
+4. Review the cited policy proposal, enter your assessment and note, and click **Approve policy amendment** or **Dismiss proposal**.
+5. Publishing the policy triggers a one-node revision request in this guided demo. The agent uses the new policy to revise the serving output node. The page shows the changed source/configuration and actual before/after evaluation.
+6. Click **Approve and activate** for the eligible revision. The same emerging batch then runs on the revised graph, with side-by-side recommendations and observed token counts.
+
+**Demo options → Show technical workspace** exposes CSV uploads, source inspection, model/tool activity, manual node tuning, and review controls. Browser progress resumes in the same browser and origin. Keep the page open for automatic handoffs between durable server jobs.
+
+Prepare authoring and evaluation before the talk. Leave the graph revision awaiting approval for a live decision during the presentation. Model latency determines preparation time. Equal before/after metrics mean classification stayed stable. The policy-driven revision demonstrates changed investigation behavior, and any measured accuracy improvement is shown directly.
 
 The sample is synthesized from public NICB, Allianz, and Texas Department of Insurance guidance; [sources and editable policy](docs/demo-policy.md). It is fictional, not an insurer’s binding policy. The extended demo fields and generated labels are not claims about the Kaggle dataset. Numerical novelty means “investigate,” not “confirmed new fraud.”
 
@@ -80,7 +77,7 @@ The worker checks every 15 seconds and consumes windows of 50 finished batches. 
 - An attributable failure selects one serving node for repair. The agent receives node identity, aggregate missing-value counts, and attributed memory. The triggering batch stays in supervisor storage.
 - Each repair has one authoring attempt with up to 12 turns. Repairs have a 10-minute cooldown and one pending automatic proposal per parent release.
 - Candidates undergo frozen development/audit evaluation and a trusted replay of the failed batch. Development F1 must meet the incumbent's result.
-- **Improvement ready for review** opens the changed node, before/after replay, and evaluation results. Use **Approve and activate** with your human identity and host approval code to activate it.
+- **Improvement ready for review** opens the changed node, before/after replay, and evaluation results. Use **Approve and activate** with your reviewer identity to activate it.
 - Review triggers, outcomes, and attributed approvals enter the durable memory outbox. Disabling Auto-review stops future reviews. A repair already running may finish for human inspection.
 
 For a controlled demo, use synthetic labelled data and an allowed missing value that causes an authored node to fail. A successful repair demonstrates robustness on that case. Fraud-accuracy improvements require verified labels and suitable independent evaluation.

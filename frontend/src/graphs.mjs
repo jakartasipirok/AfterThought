@@ -1,3 +1,4 @@
+import { initGuidedDemo } from "./guided-demo-ui.mjs";
 import { activityLoader } from "./authoring-trace.mjs";
 import { initPolicyDemo } from "./policy-demo.mjs";
 import { createGraphAPI, escapeHtml as esc, featureColumns, probability, evaluationGates, servingCounters, predictionPreview, graphLayout } from "./graph-client.mjs";
@@ -16,6 +17,15 @@ const state = {
 };
 const buildActivity = activityLoader(api, $("#buildActivity"));
 const policyDemo = initPolicyDemo(api, () => state.task, refresh);
+const guidedDemo = initGuidedDemo({ api, getTask: () => state.task, select: async (demo, view, run) => {
+  if (demo.task !== state.task) changeScope(demo.task);
+  state.datasetID = demo.datasetID || null;
+  state.jobID = demo.revisionSubmitted ? demo.revisionID : demo.submitted ? demo.jobID : null;
+  if (demo.selectedReleaseID || demo.candidateID || demo.releaseID) await chooseRelease(demo.selectedReleaseID || demo.candidateID || demo.releaseID);
+  if (run) { state.runID = run; state.run = null; state.preview = []; }
+  updateURL();
+  await refresh();
+} });
 $("#graphTask").value = state.task;
 const num = (value) => typeof value === "number" ? value.toLocaleString() : "—";
 const pretty = (value) => JSON.stringify(value, null, 2);
@@ -158,10 +168,10 @@ function syncApproval() {
   const approvalID = eligible && !active ? release.id : null;
   if (state.approvalID !== approvalID || state.approvalActiveSnapshot !== state.activeID) {
     state.approvalID = approvalID; state.approvalActiveSnapshot = state.activeID;
-    $("#approvalCode").value = ""; $("#approvalConfirmed").checked = false; status("#approvalStatus");
+    status("#approvalStatus");
   }
   $("#approvalTarget").innerHTML = release ? `<strong>${esc(release.id)}</strong>${badge(active ? "active" : release.status, active ? "Already active" : eligible ? "Eligible · awaiting human decision" : undefined)}<small>Dataset: ${esc(release.dataset_id)} · Current active release: ${esc(state.activeID || "none")}</small>` : "Select an eligible candidate to review.";
-  for (const selector of ["#approverActor", "#approvalCode", "#approvalConfirmed", "#approveReleaseButton"]) $(selector).disabled = !approvalID || state.submitting.has("approval");
+  for (const selector of ["#approverActor", "#approveReleaseButton"]) $(selector).disabled = !approvalID || state.submitting.has("approval");
 }
 
 function updateControls() {
@@ -298,19 +308,25 @@ async function refresh() {
     }
     await Promise.allSettled([loadJob(), loadRun(), policyDemo.load(state.autoReview?.latest)]);
     renderMetrics(); updateControls();
+    await guidedDemo.refresh();
   } finally { state.polling = false; }
 }
 
-$("#scopeForm").onsubmit = (event) => {
-  event.preventDefault();
-  const task = $("#graphTask").value.trim(); if (!task || task === state.task) { refresh(); return; }
+function changeScope(task) {
+  $("#graphTask").value = task;
   state.autoReview = null; renderAutoReview();
   state.task = task; policyDemo.reset(); buildActivity(null); state.datasets = []; state.dataset = null; state.datasetID = null; state.jobs = []; state.jobID = null; state.job = null;
   state.releases = []; state.release = null; state.releaseID = null; state.releaseKey = ""; state.activeID = ""; state.node = null; state.nodeSource = null; state.sourceRequest++;
   state.tuneTarget = null; state.run = null; state.runID = null; state.preview = []; state.pendingBootstrap = null; state.pendingTune = null; state.pendingBatch = null; state.releaseRequest++; state.seenJobRelease = null;
   $("#releaseDetail").innerHTML = '<p class="empty-state">Select a release in this scope.</p>'; $("#releaseStatus").innerHTML = ""; $("#releaseHeading").textContent = "Fit and serve graphs";
   $("#batchResult").innerHTML = '<p class="empty-state">No batch selected in this scope.</p>'; $("#scopeDescription").textContent = `Loaded scope: ${task}`;
-  updateURL(); renderDatasets(); renderJobs(); renderReleaseList(); renderMetrics(); refresh();
+  updateURL(); renderDatasets(); renderJobs(); renderReleaseList(); renderMetrics(); guidedDemo.scopeChanged();
+}
+$("#scopeForm").onsubmit = event => {
+  event.preventDefault();
+  const task = $("#graphTask").value.trim();
+  if (task && task !== state.task) changeScope(task);
+  refresh();
 };
 
 $("#datasetForm").onsubmit = async (event) => {
@@ -424,18 +440,17 @@ async function submitTune(event) {
 $("#approvalForm").onsubmit = async (event) => {
   event.preventDefault();
   const releaseID = state.approvalID;
-  if (!releaseID || !$("#approvalConfirmed").checked || state.submitting.has("approval")) return;
-  const actor = $("#approverActor").value.trim(), approval_code = $("#approvalCode").value;
-  if (!actor || !approval_code) return;
+  if (!releaseID || state.submitting.has("approval")) return;
+  const actor = $("#approverActor").value.trim();
+  if (!actor) return;
   const expected_current_id = state.approvalActiveSnapshot || "", task = state.task;
-  $("#approvalCode").value = "";
   state.submitting.add("approval"); updateControls(); status("#approvalStatus", `Submitting your explicit approval of ${releaseID}…`);
   try {
-    const data = await api(`/releases/${encodeURIComponent(releaseID)}/approve`, { method: "POST", body: { actor, approved: true, approval_code, expected_current_id } });
+    const data = await api(`/releases/${encodeURIComponent(releaseID)}/approve`, { method: "POST", body: { actor, approved: true, expected_current_id } });
     if (task !== state.task) return;
-    state.activeID = data.active_release_id || releaseID; $("#approvalConfirmed").checked = false;
+    state.activeID = data.active_release_id || releaseID;
     status("#approvalStatus", `Human approval recorded. Active release: ${state.activeID}.`); await refresh();
-  } catch (error) { $("#approvalConfirmed").checked = false; status("#approvalStatus", `${errorText(error)} Re-enter the host code and explicitly confirm before retrying.`, true); }
+  } catch (error) { status("#approvalStatus", `${errorText(error)} Review the current release before retrying.`, true); }
   finally { state.submitting.delete("approval"); updateControls(); }
 };
 

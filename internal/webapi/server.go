@@ -112,6 +112,17 @@ func (s *Server) Handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+
+// Handler has already validated the exact loopback origin. Code-free operator
+// decisions additionally require a browser Origin header, unlike keyed clients.
+func operatorBrowserRequest(w http.ResponseWriter, r *http.Request) bool {
+	if r.Header.Get("Origin") == "" {
+		failure(w, http.StatusForbidden, "open the local frontend to record your decision")
+		return false
+	}
+	return true
+}
+
 func loopbackHost(host string) bool {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {

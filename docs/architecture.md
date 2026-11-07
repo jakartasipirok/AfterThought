@@ -24,7 +24,7 @@ Opted-in scopes review windows of 50 finished serving batches for the active rel
 
 ## Human-only activation
 
-Passing gates creates an eligible candidate, never an active release. A human supplies reviewer identity, explicit approval, a host-only random key, and the expected-current release pointer. The private key is atomically stored outside all sandbox mounts; invalid or partial keys fail closed. Approval is absent from agent tools and Workflow/Activity registration. A transaction checks gates and pointer, records approval, and selects the release. Every revision needs a separate human decision.
+Passing gates creates an eligible candidate. A human enters reviewer identity and clicks approve in the local frontend. The browser request requires the exact same loopback origin, explicit approval, and the expected-current release pointer. Keyed host clients remain supported. Approval is absent from agent tools and Workflow/Activity registration. A transaction checks evaluation gates and the pointer, records approval, and selects the release. Every revision requires a separate human decision. The local demo trusts its operator browser and provides no multi-user authentication.
 
 Batch admission requires an approved immutable release. Its graph/model are pinned for the execution; later selection changes affect new runs. Serving does not invoke the author or Hindsight, and every output row is validated before preview/download. Synthetic tests demonstrate mechanics, not real fraud accuracy. Audit labels are hidden from the agent, but repeated operator review of audit metrics consumes independence; use fresh final evidence and entity/time splits where appropriate.
 
@@ -65,4 +65,9 @@ The current milestone supports local binary CSV intake, packaging, fit/serve exe
 
 ### Policy-aware review
 
-Company-policy PDFs are versioned task knowledge. A lightweight training-range detector records aggregate novelty at batch completion. Reviews distinguish attributable runtime failures (one-node repair) from emerging-pattern hypotheses (cited policy proposal). The latter uses a separate Temporal workflow and existing four-tool agent, with Hindsight context. Both paths remain human controlled: a policy amendment publishes knowledge only; graph activation still requires evaluation and a separate host-key approval. See the README’s quick policy-learning demo.
+Company-policy PDFs are versioned task knowledge. A lightweight training-range detector records aggregate novelty at batch completion. Reviews distinguish attributable runtime failures (one-node repair) from emerging-pattern hypotheses (cited policy proposal). The latter uses a separate Temporal workflow and existing four-tool agent, with Hindsight context. Both paths remain human controlled: a policy amendment publishes knowledge only; graph activation still requires evaluation and a separate human activation decision. See the README’s quick policy-learning demo.
+
+
+### Frontend learning story
+
+The Graph Runtime page offers a guided synthetic demo with dataset/policy cards, the serving DAG, and an evidence timeline. It uploads inputs and submits durable jobs with stable IDs, waits for human activation, runs two batches, and requests policy review. After the human publishes an amendment, the browser submits a one-node serving-output revision using the existing tuning API. Frozen evaluation and node-boundary checks apply. Human activation of the revision triggers the same emerging batch and a before/after recommendation comparison. The browser stores only progress metadata and resumes handoffs while the page is open. The 50-batch worker cadence operates independently.

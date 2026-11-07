@@ -5,7 +5,6 @@ package pipeline
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,15 +302,20 @@ func (s *Service) Active(ctx context.Context, task string) (string, error) {
 	return id, err
 }
 
-// Approve is deliberately absent from model tools and all Workflow/Activity
-// registrations. The host-only key is never mounted in an agent or node sandbox.
+// Approve supports keyed host clients. Browser approval uses ApproveFromOperator
+// after the local web boundary validates the explicit operator request.
 func (s *Service) Approve(ctx context.Context, id, actor, key, expected string) error {
-	secret, err := ReadApprovalKey(s.Files.Root)
-	if err != nil {
-		return ErrApproval
+	if err := s.checkHuman(actor, key); err != nil {
+		return err
 	}
-	if strings.TrimSpace(actor) == "" || len(actor) > 128 || !approvalKeyFormat.MatchString(strings.TrimSpace(key)) || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(key)), []byte(secret)) != 1 {
-		return ErrApproval
+	return s.ApproveFromOperator(ctx, id, actor, expected)
+}
+
+// ApproveFromOperator is only exposed by the local operator API. It is absent
+// from model tools and all Workflow/Activity registrations.
+func (s *Service) ApproveFromOperator(ctx context.Context, id, actor, expected string) error {
+	if strings.TrimSpace(actor) == "" || len(actor) > 128 {
+		return fmt.Errorf("a reviewer name is required")
 	}
 	tx, err := s.DB.Pool.Begin(ctx)
 	if err != nil {

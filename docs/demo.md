@@ -1,8 +1,11 @@
 # CSV-to-graph demo
 
+For a short hackathon presentation, follow the [60–90 second script](demo-90-seconds.md), using the frontend learning view and timed narration.
+
 Run `make demo` and open <http://127.0.0.1:8080/graphs.html>. First startup builds
 the generic numerical environment; `.env` supplies the model and Hindsight.
 
+For the manual workspace, open **Demo options → Show technical workspace**.
 For a synthetic demonstration, click **Prepare 5,000-row demo** in the evaluation
 dataset panel. It selects a generated labelled CSV, fills the dataset policy and
 an empty authoring prompt, and selects a matching label-free inference CSV.
@@ -22,10 +25,10 @@ trained for those features. No Python command or manual file creation is needed.
 3. Inspect each node's pinned source, configuration, dependencies, image, and
    revision. The backend executes the fit DAG and measures the frozen serve DAG
    on held-out data. Failed execution candidates remain inspectable and tunable.
-4. Passing gates means **eligible**, not active. A human reviews the candidate,
-   reads `bin/afterthought approval-code` in a host terminal, and enters the key,
-   reviewer identity, and explicit approval. The key is outside the agent sandbox.
-   Every revision requires a separate human decision.
+4. An eligible candidate waits for a human decision. Enter your reviewer name and
+   click **Approve and activate**. The local frontend records this explicit decision
+   after checking evaluation and the expected active release. Every revision
+   requires a separate human decision.
 5. Upload an inference CSV for an approved release. Inspect the node trace and
    zero-model counters, then download all predictions and reasons. Each node runs
    on a batch; there is no LLM call per record.

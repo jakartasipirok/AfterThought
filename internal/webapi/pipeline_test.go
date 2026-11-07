@@ -113,3 +113,35 @@ func TestPolicyReviewRejectsUnrequestedDraftsAndInvalidScope(t *testing.T) {
 		}
 	}
 }
+
+func TestCodeFreeDecisionsRequireBrowserOriginAndReviewer(t *testing.T) {
+	for _, path := range []string{"/api/releases/candidate/approve", "/api/policy-proposals/proposal/decision"} {
+		for _, tc := range []struct {
+			name, origin, fetchSite string
+			want                    int
+		}{
+			{"missing origin", "", "", 403},
+			{"foreign origin", "https://untrusted.example", "", 403},
+			{"different port", "http://127.0.0.1:8081", "", 403},
+			{"cross site", "http://127.0.0.1:8080", "cross-site", 403},
+			{"same origin requires reviewer", "http://127.0.0.1:8080", "same-origin", 400},
+		} {
+			t.Run(path+tc.name, func(t *testing.T) {
+				body := `{"approved":true}`
+				if path == "/api/policy-proposals/proposal/decision" {
+					body = `{"decision":"approve","confirmed":true}`
+				}
+				r := httptest.NewRequest("POST", "http://127.0.0.1:8080"+path, bytes.NewBufferString(body))
+				r.Header.Set("Content-Type", "application/json")
+				r.Header.Set("Origin", tc.origin)
+				r.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+				w := httptest.NewRecorder()
+				// An empty service proves validation precedes key and database access.
+				(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+				if w.Code != tc.want {
+					t.Fatalf("got %d, want %d: %s", w.Code, tc.want, w.Body.String())
+				}
+			})
+		}
+	}
+}

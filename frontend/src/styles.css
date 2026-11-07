@@ -321,3 +321,62 @@ body:has(.drawer.open) { overflow: hidden; }
 .policy-proposal form { display: grid; gap: 14px; margin-top: 20px; }
 #companyPolicyPanel form { display: grid; gap: 14px; }
 #companyPolicyPanel .form-actions { flex-wrap: wrap; }
+
+.guided-demo { padding: 24px; border-top: 3px solid #4363d8; scroll-margin-top: 85px; }
+.guided-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.guided-heading h2 { margin: 8px 0; font-size: 22px; }
+.guided-heading p { color: #667085; max-width: 680px; line-height: 1.6; }
+.guided-start { display: flex; align-items: end; gap: 16px; margin: 18px 0 12px; }
+.guided-start label { flex: 1; max-width: 360px; }
+.guided-demo [hidden] { display: none!important; }
+body[data-demo-view]:not([data-demo-view="workspace"]) :is(.scope-bar,.section-nav,#datasetPanel,.notice,.source-note,#graphMetrics) { display: none; }
+@media(max-width: 650px) {
+  .guided-heading, .guided-start { flex-direction: column; align-items: stretch; }
+  .guided-start label { max-width: none; }
+  .guided-demo { padding: 18px; }
+}
+
+.story-section { border-top: 1px solid #e9eaee; margin-top: 24px; padding-top: 22px; }
+.story-section h3 { font-size: 16px; letter-spacing: -.02em; margin: 0 0 16px; }
+.story-inputs, .story-source { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.story-inputs article { padding: 18px; border: 1px solid #e4e7ec; border-radius: 12px; background: #fafbfc; }
+.story-inputs h4 { font-size: 15px; margin: 8px 0; }
+.story-inputs p, .story-inputs small, .story-source p { color: #667085; font-size: 13px; line-height: 1.6; }
+.story-inputs a { font-size: 12px; color: #4363d8; }
+.story-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.story-status { color: #667085; font-size: 12px; }
+.story-serving { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; padding: 16px; border-radius: 10px; background: #eff8f3; color: #247053; }
+.story-timeline { list-style: none; padding: 0 0 0 8px; margin: 0; }
+.story-timeline li { padding: 0 0 20px 22px; border-left: 1px solid #dce3eb; position: relative; font-size: 13px; }
+.story-timeline li::before { content: ""; position: absolute; left: -5px; top: 4px; width: 9px; height: 9px; border-radius: 50%; background: #dce3eb; }
+.story-timeline li.done::before { background: #4363d8; }
+.story-timeline li.waiting { color: #667085; }
+.story-timeline p { margin: 5px 0 0; color: #667085; line-height: 1.5; }
+.story-comparison { padding-top: 8px; }
+.story-comparison details { margin-top: 20px; }
+.story-comparison summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.story-source { margin-top: 16px; }
+.story-source > div { min-width: 0; }
+.story-source .source-code { max-height: 300px; }
+.guided-options { margin-top: 24px; font-size: 12px; color: #667085; }
+.guided-options summary { cursor: pointer; }
+.guided-options label { margin: 14px 0; }
+.reviewer-name { max-width: 320px; }
+body[data-demo-view="story"] :is(.graph-workspace-grid,#bootstrapPanel,#batchPanel,#companyPolicyPanel,#approvalPanel,#autoReviewPanel) { display: none; }
+body[data-demo-view="story"][data-demo-stage="approval"] #approvalPanel,
+body[data-demo-view="story"][data-demo-stage="candidate"] #approvalPanel { display: block; }
+body[data-demo-view="story"][data-demo-stage="ready"] #autoReviewPanel { display: block; }
+body[data-demo-view="story"] #autoReviewPanel > :not(#policyProposal) { display: none; }
+body[data-demo-view="story"][data-demo-stage="building"] #bootstrapPanel,
+body[data-demo-view="story"][data-demo-stage="revising"] #bootstrapPanel { display: block; }
+body[data-demo-view="story"] #bootstrapPanel > :not(.activity-panel) { display: none; }
+body[data-demo-view="story"] #refreshGraphs { display: none; }
+@media(max-width: 650px) {
+  .story-inputs, .story-source { grid-template-columns: 1fr; }
+  .story-heading { align-items: start; flex-direction: column; }
+}
+
+.story-evaluation { display: flex; flex-wrap: wrap; gap: 12px 20px; padding: 14px 0; color: #667085; font-size: 12px; }
+.story-evaluation strong { color: #344054; font-weight: 500; }
+body[data-demo-view="story"][data-demo-stage="reviewing"] #autoReviewPanel,
+body[data-demo-view="story"][data-demo-stage="reviewing"] #reviewActivityPanel { display: block; }

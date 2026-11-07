@@ -354,7 +354,16 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, "explicit human approval is required")
 		return
 	}
-	if err := s.Pipeline.Approve(r.Context(), r.PathValue("id"), request.Actor, request.ApprovalCode, request.Expected); err != nil {
+	var err error
+	if request.ApprovalCode != "" {
+		err = s.Pipeline.Approve(r.Context(), r.PathValue("id"), request.Actor, request.ApprovalCode, request.Expected)
+	} else {
+		if !operatorBrowserRequest(w, r) {
+			return
+		}
+		err = s.Pipeline.ApproveFromOperator(r.Context(), r.PathValue("id"), request.Actor, request.Expected)
+	}
+	if err != nil {
 		pipelineError(w, err)
 		return
 	}

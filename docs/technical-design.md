@@ -18,7 +18,7 @@ The demonstration establishes executable graph reuse, measured evaluation, and c
 | Evaluate before activation | Trusted evaluation computes held-out metrics. Eligible revisions also meet the incumbent development F1. Automatic repairs successfully replay their triggering batch. |
 | Retain learning | Source-attributed observations, development measurements, review outcomes, and human decisions enter the durable memory outbox. |
 | Review automatically | An opted-in scope consumes windows of 50 finished batches for its active release. An attributable failure can create a repair; a fresh numerical departure can create a policy proposal. Manual review uses the same gates. |
-| Require human activation | Every activation requires the host approval key, reviewer identity, explicit confirmation, and an expected-current-release check. |
+| Require human activation | Every activation requires reviewer identity, an explicit operator decision, and an expected-current-release check. The local frontend uses same-origin approval clicks. |
 | Recover safely | Temporal histories, request digests, tool journals, immutable artifacts, and committed node outputs support replay and retry. |
 
 ## 3. System architecture
@@ -129,7 +129,7 @@ Packaged graphs that fail execution remain inspectable with `execution_failed` s
 
 ### Approval transaction
 
-The approval endpoint validates explicit confirmation, a reviewer name, the host-only key, evaluation eligibility, and the expected active release. Automatic candidates also require a passed regression report.
+The approval endpoint validates an explicit decision, a reviewer name, evaluation eligibility, and the expected active release. Code-free browser decisions require the exact same loopback origin. Keyed host clients remain supported. Automatic candidates also require a passed regression report.
 
 A transaction locks the candidate, serializes channel updates by learning scope, records an approval event, and updates `graph_channels`. Concurrent approvals using a stale expected pointer fail. The key lives in ignored host state outside agent and node mounts. Approval is available to the human-facing API and has no model-tool or Activity registration.
 

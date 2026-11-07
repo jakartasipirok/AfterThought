@@ -69,6 +69,7 @@ pnpm-debug.log*
 
 # Go runtime and local agent state
 .afterthought/
+.afterthought-archives/
 bin/
 *.test
 coverage.out

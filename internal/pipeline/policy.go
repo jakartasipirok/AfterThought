@@ -250,6 +250,15 @@ func (s *Service) DecidePolicy(ctx context.Context, id, decision, verdict, note,
 	if err := s.checkHuman(actor, key); err != nil {
 		return PolicyProposal{}, err
 	}
+	return s.DecidePolicyFromOperator(ctx, id, decision, verdict, note, actor, expected)
+}
+
+// DecidePolicyFromOperator records an explicit decision from the local operator UI.
+// It is never registered as an agent tool or Activity.
+func (s *Service) DecidePolicyFromOperator(ctx context.Context, id, decision, verdict, note, actor, expected string) (PolicyProposal, error) {
+	if strings.TrimSpace(actor) == "" || len(actor) > 128 {
+		return PolicyProposal{}, fmt.Errorf("a reviewer name is required")
+	}
 	if decision != "approve" && decision != "dismiss" {
 		return PolicyProposal{}, fmt.Errorf("choose approve or dismiss")
 	}

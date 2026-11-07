@@ -132,7 +132,16 @@ func (s *Server) policyDecision(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, "explicit human confirmation is required")
 		return
 	}
-	proposal, err := s.Pipeline.DecidePolicy(r.Context(), r.PathValue("id"), in.Decision, in.Verdict, in.Note, in.Actor, in.ApprovalCode, in.Expected)
+	var proposal pipeline.PolicyProposal
+	var err error
+	if in.ApprovalCode != "" {
+		proposal, err = s.Pipeline.DecidePolicy(r.Context(), r.PathValue("id"), in.Decision, in.Verdict, in.Note, in.Actor, in.ApprovalCode, in.Expected)
+	} else {
+		if !operatorBrowserRequest(w, r) {
+			return
+		}
+		proposal, err = s.Pipeline.DecidePolicyFromOperator(r.Context(), r.PathValue("id"), in.Decision, in.Verdict, in.Note, in.Actor, in.Expected)
+	}
 	if err != nil {
 		pipelineError(w, err)
 		return

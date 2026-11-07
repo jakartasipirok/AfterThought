@@ -42,3 +42,40 @@ func TestInternalAuthorSessionsAreReadableButCannotBeAdmittedDirectly(t *testing
 		t.Fatal("public admission accepted a reserved child ID", w.Code)
 	}
 }
+
+func TestPublicRequestsCannotClaimAutomaticReviewIdentity(t *testing.T) {
+	for _, request := range []struct{ path, body string }{
+		{"/api/bootstraps", `{"id":"public","task":"demo","auto_review_id":"internal"}`},
+		{"/api/bootstraps", `{"id":"public","task":"demo","regression":{"batch_id":"private"}}`},
+		{"/api/bootstraps", `{"id":"auto-review-reserved","task":"demo"}`},
+		{"/api/sessions", `{"id":"auto-review-reserved","task":"demo","prompt":"collide"}`},
+	} {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:8080"+request.path, bytes.NewBufferString(request.body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatalf("reserved identity admitted: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestAutoReviewRequiresExplicitToggleAndSameOrigin(t *testing.T) {
+	for _, body := range []string{`{"task":"demo"}`, `{"task":"demo","enabled":null}`, `{"task":"../demo","enabled":true}`} {
+		r := httptest.NewRequest("PUT", "http://127.0.0.1:8080/api/auto-review", bytes.NewBufferString(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatalf("invalid toggle admitted: %d", w.Code)
+		}
+	}
+	r := httptest.NewRequest("PUT", "http://127.0.0.1:8080/api/auto-review", bytes.NewBufferString(`{"task":"demo","enabled":true}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Origin", "https://untrusted.example")
+	w := httptest.NewRecorder()
+	(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+	if w.Code != 403 {
+		t.Fatalf("cross-origin toggle admitted: %d", w.Code)
+	}
+}

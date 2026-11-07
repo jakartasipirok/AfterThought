@@ -53,6 +53,14 @@
         <section class="panel graph-step-panel" id="batchPanel"><div class="section-heading"><div><span class="eyebrow">05 · REUSE THE GRAPH</span><h2>Run a batch with zero LLM calls</h2><p>Serve the human approved graph using an input CSV. Inspect actual counters and recommendations.</p></div><span class="step-number">05</span></div><form id="batchForm" class="batch-form"><label>Approved release<select id="batchRelease" required><option value="">No approved release available</option></select></label><label>Input CSV<input id="batchFile" type="file" accept=".csv,text/csv" required></label><button class="primary-button" id="startBatch" disabled>Run graph →</button></form>
           <div class="form-actions"><span class="form-hint">For demo graphs using signal, context, and noise. The generated batch contains no target labels.</span><button type="button" class="secondary-button" id="prepareDemoBatch">Prepare 5,000-row demo batch</button></div>
           <div class="form-status" id="batchStatus" role="status"></div><div id="batchResult"><p class="empty-state">Rows are processed by isolated graph nodes. Results will include recommended decisions and reasons.</p></div></section>
+        <section class="panel graph-step-panel" id="autoReviewPanel">
+          <div class="section-heading"><div><h2>Automatic robustness review</h2><p>Check every 50 finished batches on the active release. An attributable node failure can trigger an agent-authored repair.</p></div><label class="approval-confirm"><input type="checkbox" id="autoReviewEnabled" disabled> Auto-review</label></div>
+          <p class="form-hint">One uploaded CSV counts as one batch, regardless of row count. Failed runs count once. Enable to start a fresh counter.</p>
+          <div id="autoReviewProgress" class="dataset-summary" aria-live="polite">Loading review settings…</div>
+          <div id="autoReviewLatest" class="bootstrap-jobs"></div>
+          <p class="form-hint">Up to 12 model turns per repair, a 10-minute cooldown, and one pending automatic proposal per release. Each revision requires evaluation, a successful replay of the failed batch, and human approval.</p>
+          <div id="autoReviewStatus" class="form-status" role="status"></div>
+        </section>
         <p class="source-note">Metrics reflect the selected frozen dataset and observed runs. Synthetic results prove mechanics, not real insurance fraud accuracy. Human investigators retain responsibility for claim outcomes.</p>
       </div>
     </main>

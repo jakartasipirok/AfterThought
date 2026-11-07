@@ -49,9 +49,26 @@ The general authoring page still supports prompts, optional dataset URLs, tool t
 
 The **claims replay** is a separate illustrative policy demo. Its fictional rules and browser decisions are not agent-authored or promoted workflows; see [replay details](docs/claims-replay.md). Live sessions do not import that ruleset. Real fraud accuracy requires externally verified labels; the bundled Kaggle extract has none. `CLAIM_STATUS` is excluded from graph features and targets.
 
-This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. Autonomous improvement scheduling, shared image registries, multi-tenant authentication, and production claim settlement are not implemented.
+This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. The current automatic review handles attributable node failures and invalid outputs. Broader drift analysis, feedback-driven scheduling, shared image registries, multi-tenant authentication, and production claim settlement remain future work.
 
 `bin/afterthought serve --with-worker=false` serves the UI/API with a separately running worker. Use `--addr 127.0.0.1:8081` or `--ui-dir frontend` to change local settings. The server accepts loopback bindings only; it is a local demo with access to agent execution, not an authenticated public service. API calls use the same origin and never send the provider key to the browser.
+
+## Automatic review every 50 batches
+
+In **Graph Runtime**, enable **Auto-review** for the current learning scope after approving its initial graph. Enabling starts a fresh counter. One uploaded serving CSV is one batch, whether it contains 10 rows or 5,000. Completed and failed attempts count once per request ID. Each active release has its own count.
+
+The worker checks every 15 seconds and consumes windows of 50 finished batches. At one batch per minute, a window takes about 50 minutes. At five batches per minute, it takes about 10 minutes. The panel shows progress and an estimate from observed completion intervals. Cooldown and pending proposals can delay the next review.
+
+- Healthy windows record an observation without invoking the authoring model.
+- An attributable failure selects one serving node for repair. The agent receives node identity, aggregate missing-value counts, and attributed memory. The triggering batch stays in supervisor storage.
+- Each repair has one authoring attempt with up to 12 turns. Repairs have a 10-minute cooldown and one pending automatic proposal per parent release.
+- Candidates undergo frozen development/audit evaluation and a trusted replay of the failed batch. Development F1 must meet the incumbent's result.
+- **Improvement ready for review** opens the changed node, before/after replay, and evaluation results. Use **Approve and activate** with your human identity and host approval code to activate it.
+- Review triggers, outcomes, and attributed approvals enter the durable memory outbox. Disabling Auto-review stops future reviews. A repair already running may finish for human inspection.
+
+For a controlled demo, use synthetic labelled data and an allowed missing value that causes an authored node to fail. A successful repair demonstrates robustness on that case. Fraud-accuracy improvements require verified labels and suitable independent evaluation.
+
+Restart the UI and worker with `make demo` after updating the code. The toggle is disabled by default. The API exposes `GET /api/auto-review?task=YOUR_SCOPE` and `PUT /api/auto-review` with `{"task":"YOUR_SCOPE","enabled":true}`.
 
 ## CLI usage
 

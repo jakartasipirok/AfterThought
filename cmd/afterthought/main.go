@@ -203,7 +203,12 @@ func run() error {
 		defer w.Stop()
 		workerCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		reapContainers(workerCtx)
+		p, err := newPipeline(ctx, db, files)
+		if err != nil {
+			return err
+		}
+		p.Temporal = c
+		reapContainers(workerCtx, p, queue)
 		return nil
 	case "agent":
 		if *dataset != "" {

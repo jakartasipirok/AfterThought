@@ -23,6 +23,7 @@ import (
 	"github.com/jakartasipirok/AfterThought/internal/graph"
 	"github.com/jakartasipirok/AfterThought/internal/memory"
 	"github.com/jakartasipirok/AfterThought/internal/storage"
+	"go.temporal.io/sdk/client"
 )
 
 var ErrConflict = errors.New("identifier already belongs to a different request")
@@ -34,16 +35,19 @@ type Service struct {
 	Datasets  *dataset.Store
 	Engine    *execution.Engine
 	Hindsight *memory.Hindsight
+	Temporal  client.Client
 }
 
 type BuildInput struct {
-	ID              string `json:"id"`
-	Task            string `json:"task"`
-	DatasetID       string `json:"dataset_id"`
-	Prompt          string `json:"prompt"`
-	MaxTurns        int    `json:"max_turns"`
-	ParentReleaseID string `json:"parent_release_id,omitempty"`
-	NodeID          string `json:"node_id,omitempty"`
+	ID              string          `json:"id"`
+	Task            string          `json:"task"`
+	DatasetID       string          `json:"dataset_id"`
+	Prompt          string          `json:"prompt"`
+	MaxTurns        int             `json:"max_turns"`
+	ParentReleaseID string          `json:"parent_release_id,omitempty"`
+	NodeID          string          `json:"node_id,omitempty"`
+	AutoReviewID    string          `json:"auto_review_id,omitempty"`
+	Regression      *RegressionSpec `json:"regression,omitempty"`
 }
 type Job struct {
 	BuildInput
@@ -73,6 +77,8 @@ type Release struct {
 	CreatedAt        time.Time              `json:"created_at"`
 	ApprovedAt       *time.Time             `json:"approved_at,omitempty"`
 	ApprovedBy       string                 `json:"approved_by,omitempty"`
+	AutoReviewID     string                 `json:"auto_review_id,omitempty"`
+	Regression       *RegressionReport      `json:"regression,omitempty"`
 }
 type BatchInput struct {
 	ID        string         `json:"id"`
@@ -111,6 +117,9 @@ CREATE TABLE IF NOT EXISTS graph_channels(task_id text PRIMARY KEY,release_id te
 CREATE TABLE IF NOT EXISTS graph_approvals(id bigserial PRIMARY KEY,task_id text NOT NULL,release_id text NOT NULL REFERENCES graph_releases(id),previous_release_id text NOT NULL,actor text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS graph_batches(id text PRIMARY KEY,task_id text NOT NULL,input_digest text NOT NULL,payload jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now());`)
 	if err != nil {
+		return err
+	}
+	if err = s.migrateAutoReview(ctx); err != nil {
 		return err
 	}
 	return s.ensureApprovalKey()
@@ -319,6 +328,9 @@ func (s *Service) Approve(ctx context.Context, id, actor, key, expected string) 
 	if r.Status != "eligible" || !r.Development.Passed || !r.Audit.Passed {
 		return fmt.Errorf("candidate has not passed its frozen evaluation gates")
 	}
+	if r.AutoReviewID != "" && (r.Regression == nil || !r.Regression.Passed) {
+		return fmt.Errorf("automatic revision requires a successful triggering-batch replay")
+	}
 	// Serialize first promotion and subsequent compare-and-swap by task identity.
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, r.Task); err != nil {
 		return err
@@ -342,6 +354,14 @@ func (s *Service) Approve(ctx context.Context, id, actor, key, expected string) 
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO graph_approvals(task_id,release_id,previous_release_id,actor) VALUES($1,$2,$3,$4)`, r.Task, id, current, actor); err != nil {
 		return err
+	}
+	if r.AutoReviewID != "" {
+		if _, err = tx.Exec(ctx, `UPDATE graph_auto_reviews SET status='approved', candidate_id=$2, payload=jsonb_set(jsonb_set(payload,'{status}','"approved"'),'{candidate_id}',to_jsonb($2::text)) WHERE id=$1`, r.AutoReviewID, id); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO agent_memory(task_id,source,content,dedup_key) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`, r.Task, "human:"+actor, "Human explicitly approved automatic robustness revision "+id+" from review "+r.AutoReviewID+" after frozen evaluation and triggering-batch replay.", r.AutoReviewID+"/approval"); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

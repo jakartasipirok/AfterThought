@@ -33,6 +33,7 @@ type EvaluationInput struct {
 	Build                   BuildInput
 	Plan                    Plan
 	Fit, Development, Audit execution.RunResult
+	Regression              *RegressionReport
 }
 type BuildFailure struct{ ID, Message string }
 type BatchPlan struct {
@@ -73,7 +74,11 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 	}
 	var plan Plan
 	previous := ""
-	for attempt := 0; attempt < 2; attempt++ {
+	attempts := 2
+	if in.AutoReviewID != "" {
+		attempts = 1
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		session := AuthorSessionID(in.ID, attempt)
 		authorCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{WorkflowID: session, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE})
 		var outcome agentruntime.Outcome
@@ -85,7 +90,7 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 		if err == nil {
 			break
 		}
-		if attempt == 1 {
+		if attempt == attempts-1 {
 			return "", err
 		}
 		message := err.Error()
@@ -118,7 +123,22 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 	if e != nil {
 		return "", e
 	}
-	err = workflow.ExecuteActivity(ctx, "PipelineEvaluate", EvaluationInput{in, plan, fit, dev, audit}).Get(ctx, &releaseID)
+	var regression *RegressionReport
+	if in.Regression != nil {
+		if err = workflow.ExecuteActivity(ctx, "PipelinePhase", BuildFailure{in.ID, "replaying_trigger"}).Get(ctx, nil); err != nil {
+			return "", err
+		}
+		replay, replayErr := graphChild(ctx, "internal/build/"+in.ID+"/regression", plan.Graph.Serve, in.Regression.Input, fit.Output)
+		if replayErr != nil {
+			return "", replayErr
+		}
+		var report RegressionReport
+		if err = workflow.ExecuteActivity(ctx, "PipelineValidateRegression", RegressionValidation{Build: in, Result: replay}).Get(ctx, &report); err != nil {
+			return "", err
+		}
+		regression = &report
+	}
+	err = workflow.ExecuteActivity(ctx, "PipelineEvaluate", EvaluationInput{Build: in, Plan: plan, Fit: fit, Development: dev, Audit: audit, Regression: regression}).Get(ctx, &releaseID)
 	return releaseID, err
 }
 
@@ -147,6 +167,20 @@ type Activities struct{ Service *Service }
 
 func (a *Activities) PipelinePrepare(ctx context.Context, in BuildInput) (string, error) {
 	s := a.Service
+	if in.AutoReviewID != "" {
+		review, err := s.Review(ctx, in.AutoReviewID)
+		if err != nil {
+			return "", err
+		}
+		if graph.Digest(review.Build) != graph.Digest(in) || in.Regression == nil {
+			return "", fmt.Errorf("automatic review input changed")
+		}
+	}
+	if in.Regression != nil {
+		if _, err := s.regressionBatch(ctx, in); err != nil {
+			return "", err
+		}
+	}
 	d, err := s.Datasets.Get(ctx, in.DatasetID)
 	if err != nil {
 		return "", err
@@ -229,6 +263,9 @@ func (a *Activities) PipelinePackage(ctx context.Context, in PackageInput) (Plan
 		if err = execution.ValidateTuning(parent.Graph, plan.Graph, in.Build.NodeID); err != nil {
 			return plan, err
 		}
+		if in.Build.AutoReviewID != "" && parent.Graph.ID == plan.Graph.ID {
+			return plan, fmt.Errorf("automatic revision did not change the selected node")
+		}
 		if strings.HasPrefix(in.Build.NodeID, "serve:") {
 			plan.ExistingFit = parent.FitArtifact
 		}
@@ -254,6 +291,9 @@ func (a *Activities) PipelinePackage(ctx context.Context, in PackageInput) (Plan
 }
 func (a *Activities) PipelineEvaluate(ctx context.Context, in EvaluationInput) (string, error) {
 	s := a.Service
+	if in.Build.Regression != nil && (in.Regression == nil || !in.Regression.Passed || in.Regression.BatchID != in.Build.Regression.BatchID) {
+		return "", fmt.Errorf("candidate requires a successful triggering-batch replay")
+	}
 	dev, err := s.Datasets.Evaluate(ctx, in.Build.DatasetID, "development", in.Development.Output)
 	if err != nil {
 		return "", err
@@ -272,12 +312,17 @@ func (a *Activities) PipelineEvaluate(ctx context.Context, in EvaluationInput) (
 			dev.Failures = append(dev.Failures, "development F1 regressed against the immutable incumbent")
 		}
 	}
-	id := graph.Digest(map[string]any{"graph": in.Plan.Graph, "fit_artifact": in.Fit.Output, "dataset_id": in.Build.DatasetID})
+	identity := map[string]any{"graph": in.Plan.Graph, "fit_artifact": in.Fit.Output, "dataset_id": in.Build.DatasetID}
+	if in.Build.AutoReviewID != "" {
+		identity["auto_review_id"] = in.Build.AutoReviewID
+	}
+	id := graph.Digest(identity)
 	status := "rejected"
 	if dev.Passed && audit.Passed {
 		status = "eligible"
 	}
 	r := Release{ID: id, Task: in.Build.Task, DatasetID: in.Build.DatasetID, ParentReleaseID: in.Build.ParentReleaseID, NodeID: in.Build.NodeID, Status: status, Graph: in.Plan.Graph, FitArtifact: in.Fit.Output, Development: dev, Audit: audit, FitTrace: in.Fit.Nodes, DevelopmentTrace: in.Development.Nodes, AuditTrace: in.Audit.Nodes, CreatedAt: time.Now().UTC()}
+	r.AutoReviewID, r.Regression = in.Build.AutoReviewID, in.Regression
 	if err = s.SaveRelease(ctx, r); err != nil {
 		return "", err
 	}
@@ -329,6 +374,9 @@ func (a *Activities) PipelineBuildFailed(ctx context.Context, in BuildFailure) e
 			}
 		}
 	}
+	if j.AutoReviewID != "" {
+		message = "Automatic robustness candidate failed authoring, packaging, evaluation, or replay. Inspect the retained job for operator diagnostics."
+	}
 	return s.DB.Remember(ctx, j.Task, "execution_error", "Graph build failed: "+message, in.ID+"/build_failure")
 }
 func (a *Activities) PipelineBatchPrepare(ctx context.Context, in BatchInput) (BatchPlan, error) {
@@ -348,9 +396,13 @@ func (a *Activities) PipelineBatchPrepare(ctx context.Context, in BatchInput) (B
 	if r.ApprovedAt == nil {
 		return p, fmt.Errorf("release has not been approved by a human")
 	}
-	b.Status = "running"
-	if err = s.SaveBatch(ctx, b); err != nil {
-		return p, err
+	// A resubmission after Temporal retention expires can re-enter Prepare.
+	// Preserve the terminal batch and its once-only completion signal.
+	if b.Status != "completed" && b.Status != "failed" {
+		b.Status = "running"
+		if err = s.SaveBatch(ctx, b); err != nil {
+			return p, err
+		}
 	}
 	p = BatchPlan{Graph: r.Graph.Serve, Fit: r.FitArtifact, Batch: b}
 	return p, nil
@@ -375,5 +427,36 @@ func (a *Activities) PipelineBatchFinish(ctx context.Context, in BatchFinish) er
 	if in.Error != "" {
 		b.Status = "failed"
 	}
-	return s.SaveBatch(ctx, b)
+	return s.recordBatchSignal(ctx, b)
+}
+
+type RegressionValidation struct {
+	Build  BuildInput
+	Result execution.RunResult
+}
+
+func (s *Service) regressionBatch(ctx context.Context, in BuildInput) (Batch, error) {
+	if in.Regression == nil {
+		return Batch{}, fmt.Errorf("regression input is required")
+	}
+	b, err := s.Batch(ctx, in.Regression.BatchID)
+	if err != nil {
+		return b, err
+	}
+	if b.Task != in.Task || b.ReleaseID != in.ParentReleaseID || b.Status != "failed" || b.Input != in.Regression.Input {
+		return b, fmt.Errorf("regression must replay a failed batch of the incumbent release")
+	}
+	return b, nil
+}
+
+func (a *Activities) PipelineValidateRegression(ctx context.Context, in RegressionValidation) (RegressionReport, error) {
+	s := a.Service
+	b, err := s.regressionBatch(ctx, in.Build)
+	if err != nil {
+		return RegressionReport{}, err
+	}
+	if err = s.Datasets.ValidateOutput(ctx, b.Input, in.Result.Output); err != nil {
+		return RegressionReport{}, err
+	}
+	return RegressionReport{BatchID: b.ID, Passed: true, Rows: b.RowCount, Before: b.Status, After: "completed", Trace: in.Result.Nodes}, nil
 }

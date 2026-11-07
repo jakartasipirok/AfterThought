@@ -96,6 +96,7 @@ func pipelineFixtureStore(t *testing.T, ctx context.Context) (*Service, client.C
 		t.Fatal(err)
 	}
 	t.Cleanup(temporal.Close)
+	service.Temporal = temporal
 	return service, temporal
 }
 
@@ -137,7 +138,7 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 	if os.Getenv("AFTERTHOUGHT_INTEGRATION") != "1" {
 		t.Skip("requires Docker, Postgres, Temporal, and the local ML image; model endpoint is mocked")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 	defer cancel()
 	service, temporal := pipelineFixtureStore(t, ctx)
 	draft, sources := pipelineAuthorFixture()
@@ -158,12 +159,13 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 		if len(request.Tools) != 4 {
 			t.Error("pipeline expanded the four model-visible tools")
 		}
-		tuning, toolDone := false, false
+		tuning, repairing, toolDone := false, false, false
 		for _, message := range request.Messages {
 			if strings.Contains(message.Content, strings.TrimSpace(string(approvalKey))) {
 				t.Error("host approval key was exposed to the author")
 			}
 			tuning = tuning || strings.Contains(message.Content, "Improve ONLY node serve:score")
+			repairing = repairing || strings.Contains(message.Content, "Improve ONLY node serve:prepare")
 			toolDone = toolDone || message.Role == "tool"
 		}
 		message := model.Message{Role: "assistant", Content: "Candidate files are ready for trusted execution and evaluation; no approval was performed."}
@@ -171,7 +173,9 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 		if !toolDone {
 			finish = "tool_calls"
 			message.Content = ""
-			if tuning {
+			if repairing {
+				message.ToolCalls = []model.Call{{ID: "repair-null", Type: "function", Function: model.FunctionCall{Name: "edit", Arguments: string(encode(map[string]string{"path": "nodes/serve-prepare.py", "old_text": "float(row['signal'])", "new_text": "float(row['signal'] or 0)"}))}}}
+			} else if tuning {
 				message.ToolCalls = []model.Call{{ID: "tune-score-config", Type: "function", Function: model.FunctionCall{Name: "edit", Arguments: string(encode(map[string]string{"path": "candidate.json", "old_text": `"threshold": 0.5`, "new_text": `"threshold": 0.6`}))}}}
 			} else {
 				for _, name := range []string{"nodes/fit.py", "nodes/prepare.py", "nodes/score.py"} {
@@ -191,6 +195,7 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 	w := worker.New(temporal, queue, worker.Options{})
 	w.RegisterWorkflow(BuildWorkflow)
 	w.RegisterWorkflow(BatchWorkflow)
+	w.RegisterWorkflow(AutoReviewWorkflow)
 	w.RegisterWorkflow(agentruntime.AgentWorkflow)
 	w.RegisterWorkflow(execution.GraphWorkflow)
 	w.RegisterActivity(&Activities{Service: service})
@@ -348,4 +353,7 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 	if err != nil || active != tunedID {
 		t.Fatal("approved tuned release was not selected for new runs", err)
 	}
+	t.Run("automatic robustness review", func(t *testing.T) {
+		testAutoReviewRepair(t, ctx, service, temporal, queue, tuned, input, result, &modelCalls)
+	})
 }

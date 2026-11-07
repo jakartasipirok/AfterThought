@@ -229,7 +229,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &request) {
 		return
 	}
-	if !identifier.MatchString(request.ID) {
+	if !identifier.MatchString(request.ID) || strings.HasPrefix(request.ID, "auto-review-") {
 		failure(w, 400, "supply a stable client-generated session ID (1..128 letters, numbers, dot, dash or underscore)")
 		return
 	}

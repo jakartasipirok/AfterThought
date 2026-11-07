@@ -22,6 +22,8 @@ import (
 )
 
 func (s *Server) pipelineRoutes(m *http.ServeMux) {
+	m.HandleFunc("GET /api/auto-review", s.autoReviewStatus)
+	m.HandleFunc("PUT /api/auto-review", s.setAutoReview)
 	m.HandleFunc("POST /api/datasets", s.uploadDataset)
 	m.HandleFunc("GET /api/datasets", s.datasets)
 	m.HandleFunc("GET /api/datasets/{id}", s.dataset)
@@ -139,6 +141,10 @@ func (s *Server) startGraphWorkflow(ctx context.Context, id string, input any, w
 	return nil
 }
 func (s *Server) startBuild(w http.ResponseWriter, r *http.Request, in pipeline.BuildInput) {
+	if in.AutoReviewID != "" || in.Regression != nil || strings.HasPrefix(in.ID, "auto-review-") {
+		failure(w, 400, "automatic review fields and IDs are reserved for the worker")
+		return
+	}
 	if !identifier.MatchString(in.ID) || len(in.ID) > 80 || !identifier.MatchString(in.Task) {
 		failure(w, 400, "valid task and request ID (up to80 characters) are required")
 		return
@@ -333,7 +339,7 @@ func (s *Server) batchStart(w http.ResponseWriter, r *http.Request) {
 	var options struct {
 		ID string `json:"id"`
 	}
-	if err := graph.Decode([]byte(r.FormValue("options")), &options); err != nil || !identifier.MatchString(options.ID) || len(options.ID) > 100 {
+	if err := graph.Decode([]byte(r.FormValue("options")), &options); err != nil || !identifier.MatchString(options.ID) || strings.HasPrefix(options.ID, "auto-review-") || len(options.ID) > 100 {
 		failure(w, 400, "options must contain a stable request ID")
 		return
 	}
@@ -409,4 +415,42 @@ func (s *Server) batchOutput(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="predictions.json"`)
 	w.WriteHeader(200)
 	_, _ = w.Write(data)
+}
+
+func (s *Server) autoReviewStatus(w http.ResponseWriter, r *http.Request) {
+	task := r.URL.Query().Get("task")
+	if !identifier.MatchString(task) {
+		failure(w, 400, "valid task is required")
+		return
+	}
+	status, err := s.Pipeline.AutoReviewStatus(r.Context(), task)
+	if err != nil {
+		pipelineError(w, err)
+		return
+	}
+	respond(w, 200, status)
+}
+
+func (s *Server) setAutoReview(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Task    string `json:"task"`
+		Enabled *bool  `json:"enabled"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if !identifier.MatchString(in.Task) || in.Enabled == nil {
+		failure(w, 400, "task and explicit enabled boolean are required")
+		return
+	}
+	if err := s.Pipeline.SetAutoReview(r.Context(), in.Task, *in.Enabled); err != nil {
+		pipelineError(w, err)
+		return
+	}
+	status, err := s.Pipeline.AutoReviewStatus(r.Context(), in.Task)
+	if err != nil {
+		pipelineError(w, err)
+		return
+	}
+	respond(w, 200, status)
 }

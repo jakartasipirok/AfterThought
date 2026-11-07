@@ -10,7 +10,7 @@ const state = {
   jobs: [], jobID: params.get("job"), job: null, releases: [], releaseID: params.get("release"), release: null, releaseKey: "", activeID: "",
   node: null, nodeSource: null, sourceRequest: 0, releaseRequest: 0, tuneTarget: null, approvalID: null, approvalActiveSnapshot: null, seenJobRelease: null,
   runID: params.get("run"), run: null, preview: [], health: null, polling: false, loading: false,
-  pendingBootstrap: null, pendingTune: null, pendingBatch: null, submitting: new Set(),
+  autoReview: null, pendingBootstrap: null, pendingTune: null, pendingBatch: null, submitting: new Set(),
 };
 $("#graphTask").value = state.task;
 const num = (value) => typeof value === "number" ? value.toLocaleString() : "—";
@@ -94,7 +94,7 @@ function renderRelease() {
   const graph = release.graph || {}, policy = release.audit?.policy || release.development?.policy || state.dataset?.policy || {};
   $("#releaseHeading").textContent = graph.name || "Fit and serve graphs";
   $("#releaseStatus").innerHTML = badge(release.id === state.activeID ? "active" : release.status, release.id === state.activeID ? "Human approved · active" : undefined);
-  $("#releaseDetail").innerHTML = `<div class="release-meta"><code>${esc(release.id)}</code><span>Dataset ${esc(release.dataset_id)}</span>${release.parent_release_id ? `<span>Parent ${esc(release.parent_release_id)}</span>` : ""}${release.node_id ? `<span>Changed node ${esc(release.node_id)}</span>` : ""}<span>${esc(date(release.created_at))}</span></div>${release.execution_error ? `<div class="detail-warning"><strong>Graph execution failed.</strong> ${esc(release.execution_error)} The retained graph and source remain available for inspection and one-node revision.</div>` : ""}<section class="dag-phase"><div class="dag-heading"><h3>Fit graph</h3><span>Frozen training data → fitted artifact</span></div>${dagMarkup(graph.fit || {}, "fit")}</section><section class="dag-phase"><div class="dag-heading"><h3>Serve graph</h3><span>Batch inputs + fitted artifact → recommendations</span></div>${dagMarkup(graph.serve || {}, "serve")}</section><div id="nodeInspector" class="node-inspector"><p class="empty-state">Select a node to inspect pinned source code and configuration.</p></div><section class="evaluation-section"><h3 class="detail-section-heading">Measured evaluation evidence</h3><div class="evaluation-grid">${reportMarkup(release.development, "Development split", policy)}${reportMarkup(release.audit, "Reserved audit split", policy)}</div><p class="audit-reuse-note">Candidates reuse the same frozen split. Audit labels are withheld from the author, while operators can inspect these metrics. Repeated review requires a fresh audit dataset for a final independent accuracy claim.</p></section><section class="tune-panel"><div><h3>Improve exactly one node</h3><p>Choose a node above, then prepare a revision. The server preserves every other node’s source, configuration, and topology.</p></div><form id="tuneForm"><div id="tuneTarget" class="tune-target">No node selected for revision.</div><label for="tunePrompt">Grounded improvement request<textarea id="tunePrompt" rows="3" maxlength="12000" placeholder="Describe the observed failure, evidence, and desired change to this node." required></textarea></label><div class="form-actions"><span class="form-hint">The new candidate must pass evaluation and receive separate human approval.</span><button class="primary-button" id="startTune" disabled>Author one-node revision →</button></div><div id="tuneStatus" class="form-status" role="status"></div></form></section>`;
+  $("#releaseDetail").innerHTML = `<div class="release-meta"><code>${esc(release.id)}</code><span>Dataset ${esc(release.dataset_id)}</span>${release.parent_release_id ? `<span>Parent ${esc(release.parent_release_id)}</span>` : ""}${release.node_id ? `<span>Changed node ${esc(release.node_id)}</span>` : ""}<span>${esc(date(release.created_at))}</span></div>${release.execution_error ? `<div class="detail-warning"><strong>Graph execution failed.</strong> ${esc(release.execution_error)} The retained graph and source remain available for inspection and one-node revision.</div>` : ""}<section class="dag-phase"><div class="dag-heading"><h3>Fit graph</h3><span>Frozen training data → fitted artifact</span></div>${dagMarkup(graph.fit || {}, "fit")}</section><section class="dag-phase"><div class="dag-heading"><h3>Serve graph</h3><span>Batch inputs + fitted artifact → recommendations</span></div>${dagMarkup(graph.serve || {}, "serve")}</section><div id="nodeInspector" class="node-inspector"><p class="empty-state">Select a node to inspect pinned source code and configuration.</p></div><section class="evaluation-section"><h3 class="detail-section-heading">Measured evaluation evidence</h3><div class="evaluation-grid">${reportMarkup(release.development, "Development split", policy)}${reportMarkup(release.audit, "Reserved audit split", policy)}</div><p class="audit-reuse-note">Candidates reuse the same frozen split. Audit labels are withheld from the author, while operators can inspect these metrics. Repeated review requires a fresh audit dataset for a final independent accuracy claim.</p></section>${regressionMarkup(release)}<section class="tune-panel"><div><h3>Improve exactly one node</h3><p>Choose a node above, then prepare a revision. The server preserves every other node’s source, configuration, and topology.</p></div><form id="tuneForm"><div id="tuneTarget" class="tune-target">No node selected for revision.</div><label for="tunePrompt">Grounded improvement request<textarea id="tunePrompt" rows="3" maxlength="12000" placeholder="Describe the observed failure, evidence, and desired change to this node." required></textarea></label><div class="form-actions"><span class="form-hint">The new candidate must pass evaluation and receive separate human approval.</span><button class="primary-button" id="startTune" disabled>Author one-node revision →</button></div><div id="tuneStatus" class="form-status" role="status"></div></form></section>`;
   $("#tuneForm").onsubmit = submitTune;
   $("#tunePrompt").value = tuneDraft;
   if (state.tuneTarget?.release_id === release.id) $("#tuneTarget").textContent = `Revision target: ${state.tuneTarget.node_id} in ${release.id}`;
@@ -198,15 +198,71 @@ async function loadRun() {
   catch (error) { if (id === state.runID) status("#batchStatus", errorText(error), true); }
 }
 
+function regressionMarkup(release) {
+  const report = release.regression;
+  if (!report) return "";
+  const parent = state.releases.find((item) => item.id === release.parent_release_id);
+  return `<section class="evaluation-report"><h3>Triggering batch replay</h3><p>Changed node <strong>${esc(release.node_id)}</strong></p><p>${esc(report.batch_id)} · ${num(report.rows)} rows · ${esc(report.before)} → ${esc(report.after)} ${badge(report.passed ? "passed" : "failed")}</p><p>Development F1 ${probability(parent?.development?.metrics?.f1)} → ${probability(release.development?.metrics?.f1)}</p><p>Audit F1 ${probability(parent?.audit?.metrics?.f1)} → ${probability(release.audit?.metrics?.f1)}</p></section>`;
+}
+
+function renderAutoReview() {
+  const review = state.autoReview;
+  const toggle = $("#autoReviewEnabled");
+  toggle.disabled = !review || state.submitting.has("autoReview");
+  toggle.checked = review?.enabled === true;
+  if (!review) {
+    $("#autoReviewProgress").textContent = "Review settings unavailable.";
+    $("#autoReviewLatest").innerHTML = "";
+    return;
+  }
+  let progress = "Enable Auto-review to start counting batches.";
+  if (review.enabled) {
+    progress = review.active_release_id ? `${num(review.finished_batches)} / ${review.interval} finished batches · ${num(review.remaining_batches)} remaining.` : "Approve a release to begin counting batches.";
+    if (review.active_release_id && review.remaining_batches > 0) {
+      progress += Number.isFinite(review.estimate_seconds) ? ` Approximately ${Math.max(1, Math.ceil(review.estimate_seconds / 60))} minutes at the observed completion rate.` : " Run at least two batches for a throughput estimate.";
+    }
+    if (review.remaining_batches === 0) progress += review.latest?.status === "awaiting_approval" ? " Waiting for the pending candidate’s human review." : " Window ready for the worker’s next check.";
+    if (new Date(review.cooldown_until) > new Date()) progress += ` Repairs eligible after ${date(review.cooldown_until)}.`;
+  }
+  $("#autoReviewProgress").textContent = progress;
+  const latest = review.latest;
+  if (!latest) { $("#autoReviewLatest").innerHTML = ""; return; }
+  const ready = latest.status === "awaiting_approval";
+  $("#autoReviewLatest").innerHTML = `<h3>${ready ? "Improvement ready for review" : esc(displayStatus(latest.status))}</h3><p>${esc(latest.summary)}</p>${latest.build?.node_id ? `<p>Selected node <strong>${esc(latest.build.node_id)}</strong></p>` : ""}${latest.candidate_id ? '<button type="button" class="secondary-button" id="inspectAutoCandidate">Inspect candidate and approval evidence →</button>' : ""}`;
+  if (latest.candidate_id) $("#inspectAutoCandidate").onclick = async () => {
+    await chooseRelease(latest.candidate_id);
+    $("#releasePanel").scrollIntoView({ behavior: "smooth" });
+  };
+}
+
+$("#autoReviewEnabled").onchange = async (event) => {
+  const scope = state.task, enabled = event.target.checked;
+  state.submitting.add("autoReview");
+  event.target.disabled = true;
+  try {
+    const review = await api("/auto-review", { method: "PUT", body: { task: scope, enabled } });
+    if (scope !== state.task) return;
+    state.autoReview = review;
+    status("#autoReviewStatus", enabled ? "Auto-review enabled. Each proposed revision requires your approval." : "Auto-review disabled. An authoring job already in progress may finish.");
+  } catch (error) {
+    if (scope === state.task) status("#autoReviewStatus", errorText(error), true);
+  } finally {
+    state.submitting.delete("autoReview");
+    renderAutoReview();
+  }
+};
+
 async function refresh() {
   if (state.polling) return;
   state.polling = true;
   const scope = state.task;
   try {
     const query = new URLSearchParams({ task: scope });
-    const results = await Promise.allSettled([api("/health"), api(`/datasets?${query}`), api(`/bootstraps?${query}`), api(`/releases?${query}`)]);
+    const results = await Promise.allSettled([api("/health"), api(`/datasets?${query}`), api(`/bootstraps?${query}`), api(`/releases?${query}`), api(`/auto-review?${query}`)]);
     if (scope !== state.task) return;
-    const [health, datasets, jobs, releases] = results;
+    const [health, datasets, jobs, releases, review] = results;
+    state.autoReview = review.status === "fulfilled" ? review.value : null;
+    renderAutoReview();
     const healthData = health.status === "fulfilled" ? health.value : health.reason?.data;
     state.health = healthData || null;
     const ready = healthData?.ready === true;
@@ -237,6 +293,7 @@ async function refresh() {
 $("#scopeForm").onsubmit = (event) => {
   event.preventDefault();
   const task = $("#graphTask").value.trim(); if (!task || task === state.task) { refresh(); return; }
+  state.autoReview = null; renderAutoReview();
   state.task = task; state.datasets = []; state.dataset = null; state.datasetID = null; state.jobs = []; state.jobID = null; state.job = null;
   state.releases = []; state.release = null; state.releaseID = null; state.releaseKey = ""; state.activeID = ""; state.node = null; state.nodeSource = null; state.sourceRequest++;
   state.tuneTarget = null; state.run = null; state.runID = null; state.preview = []; state.pendingBootstrap = null; state.pendingTune = null; state.pendingBatch = null; state.releaseRequest++; state.seenJobRelease = null;

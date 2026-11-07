@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -45,6 +46,7 @@ func startWorker(ctx context.Context, db *storage.DB, files *storage.Files, c cl
 	if err != nil {
 		return nil, err
 	}
+	s.Temporal = c
 	a.GraphImage = s.Engine.Image
 	a.Prepare = s.PrepareAuthoring
 	w := worker.New(c, queue, worker.Options{MaxConcurrentActivityExecutionSize: 4})
@@ -54,6 +56,7 @@ func startWorker(ctx context.Context, db *storage.DB, files *storage.Files, c cl
 	w.RegisterActivity(&execution.Activities{Engine: s.Engine})
 	w.RegisterWorkflow(pipeline.BuildWorkflow)
 	w.RegisterWorkflow(pipeline.BatchWorkflow)
+	w.RegisterWorkflow(pipeline.AutoReviewWorkflow)
 	w.RegisterActivity(&pipeline.Activities{Service: s})
 	if err = w.Start(); err != nil {
 		return nil, err
@@ -61,7 +64,7 @@ func startWorker(ctx context.Context, db *storage.DB, files *storage.Files, c cl
 	return w, nil
 }
 
-func reapContainers(ctx context.Context) {
+func reapContainers(ctx context.Context, service *pipeline.Service, queue string) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -69,6 +72,11 @@ func reapContainers(ctx context.Context) {
 		harness.Reap(cleanup)
 		execution.ReapExpired(cleanup)
 		cancel()
+		reviewCtx, reviewCancel := context.WithTimeout(ctx, 30*time.Second)
+		if err := service.DispatchAutoReviews(reviewCtx, queue); err != nil && ctx.Err() == nil {
+			log.Printf("automatic review dispatch: %v", err)
+		}
+		reviewCancel()
 		select {
 		case <-ctx.Done():
 			return

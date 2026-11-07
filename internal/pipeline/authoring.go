@@ -21,8 +21,15 @@ func (s *Service) Workspace(id string) string {
 // PrepareAuthoring runs inside Setup Activity, never inside Workflow code.
 // Reserved audit data and the host approval key are not staged here.
 func (s *Service) PrepareAuthoring(ctx context.Context, in agentruntime.Input, workspace string) (string, error) {
+	if in.PolicyReviewID != "" {
+		return s.preparePolicyReview(ctx, in, workspace)
+	}
+	policyNote, err := s.stagePolicy(ctx, in.Task, in.PolicyID, workspace)
+	if err != nil {
+		return "", err
+	}
 	if in.DatasetID == "" {
-		return "", nil
+		return policyNote, nil
 	}
 	d, err := s.Datasets.Get(ctx, in.DatasetID)
 	if err != nil {
@@ -57,7 +64,7 @@ func (s *Service) PrepareAuthoring(ctx context.Context, in agentruntime.Input, w
 	if err = os.WriteFile(filepath.Join(workspace, "graph-authoring.md"), []byte(authoringContract), 0644); err != nil {
 		return "", err
 	}
-	return "Executable graph task: read graph-authoring.md for the v2 node interface and profile.json for dataset metadata before implementing. Training/development data are staged under data/. Audit data and the human approval key are outside this workspace.", nil
+	return policyNote + " Executable graph task: read graph-authoring.md for the v2 node interface and profile.json for dataset metadata before implementing. Training/development data are staged under data/. Audit data and the human approval key are outside this workspace.", nil
 }
 
 func (s *Service) copyAuthoring(source, destination string) error {
@@ -74,7 +81,7 @@ func (s *Service) copyAuthoring(source, destination string) error {
 			return nil
 		}
 		if e.IsDir() {
-			if name == "data" || name == "skills" || strings.Contains(name, "__pycache__") || strings.Count(name, "/") > 5 {
+			if name == "data" || name == "knowledge" || name == "skills" || strings.Contains(name, "__pycache__") || strings.Count(name, "/") > 5 {
 				return fs.SkipDir
 			}
 			return os.MkdirAll(filepath.Join(destination, name), 0755)

@@ -18,6 +18,10 @@ Dataset intake freezes operator-declared binary labels, selected features, infer
 
 Tuning pins a parent release and selected `fit:ID` or `serve:ID`. The supervisor rejects edits outside that node's source/config, preserving every other revision and the graph topology. Serving edits reuse the fitted artifact; fit edits retrain. The whole graph is reevaluated, and development F1 regressions fail eligibility. Only development evidence enters improvement memory. Internal child/session IDs use an API-reserved namespace, and author sessions bind their full input digest.
 
+## Automatic robustness review
+
+Opted-in scopes review windows of 50 finished serving batches for the active release. The worker records aggregate signals and claims review windows under a task lock. Attributable failures can start a bounded, one-node repair workflow with frozen evaluation and a trusted replay of the triggering batch. Each candidate requires human approval. Review outcomes and approvals enter the attributed memory outbox. See the [Technical Design Document](technical-design.md) for cadence, limits, recovery, and state transitions.
+
 ## Human-only activation
 
 Passing gates creates an eligible candidate, never an active release. A human supplies reviewer identity, explicit approval, a host-only random key, and the expected-current release pointer. The private key is atomically stored outside all sandbox mounts; invalid or partial keys fail closed. Approval is absent from agent tools and Workflow/Activity registration. A transaction checks gates and pointer, records approval, and selects the release. Every revision needs a separate human decision.
@@ -56,4 +60,9 @@ Provider credentials stay in the worker and memory services. Memory extraction/r
 
 Only skill name/description/path metadata is present initially. The agent uses `read` for full guidance. Skills describe methods and contracts; they do not supply initial business code. This mirrors [Pi's implementation](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/system-prompt.ts) without embedding Pi's TypeScript runtime.
 
-The current milestone supports local binary CSV intake, packaging, fit/serve execution, measured evaluations, human approval, batch inference, and selected-node revisions. Further work includes autonomous improvement triggers, richer task/schema types, final-audit lifecycle management, distributed storage/images, authentication, and production deployment controls.
+The current milestone supports local binary CSV intake, packaging, fit/serve execution, measured evaluations, human approval, batch inference, and selected-node revisions. Further work includes broader improvement triggers, richer task/schema types, final-audit lifecycle management, distributed storage/images, authentication, and production deployment controls.
+
+
+### Policy-aware review
+
+Company-policy PDFs are versioned task knowledge. A lightweight training-range detector records aggregate novelty at batch completion. Reviews distinguish attributable runtime failures (one-node repair) from emerging-pattern hypotheses (cited policy proposal). The latter uses a separate Temporal workflow and existing four-tool agent, with Hindsight context. Both paths remain human controlled: a policy amendment publishes knowledge only; graph activation still requires evaluation and a separate host-key approval. See the README’s quick policy-learning demo.

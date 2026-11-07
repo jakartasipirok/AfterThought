@@ -60,7 +60,7 @@ function renderQueue() {
   $("#recordCount").textContent = `${claims.length.toLocaleString()} claims`;
   $("#claimRows").innerHTML = visible.map((claim) => {
     const result = evaluation(claim);
-    return `<tr data-id="${escapeHtml(claim.id)}"><td><span class="claim-id">${escapeHtml(claim.id)}</span><small>${escapeHtml(claim.agent_id)}</small></td><td>${escapeHtml(claim.loss_date)}</td><td class="amount">${formatMoney(claim.amount)}</td><td>${escapeHtml(claim.severity)}</td><td>${badge(result.outcome)}</td><td>${escapeHtml(result.route)}</td><td class="row-arrow">↗</td></tr>`;
+    return `<tr data-id="${escapeHtml(claim.id)}"><td><button type="button" class="claim-id claim-link" aria-label="Open claim ${escapeHtml(claim.id)}">${escapeHtml(claim.id)}</button><small>${escapeHtml(claim.agent_id)}</small></td><td>${escapeHtml(claim.loss_date)}</td><td class="amount">${formatMoney(claim.amount)}</td><td>${escapeHtml(claim.severity)}</td><td>${badge(result.outcome)}</td><td>${escapeHtml(result.route)}</td><td class="row-arrow">↗</td></tr>`;
   }).join("") || '<tr><td colspan="7" class="empty">No claims match these filters.</td></tr>';
   $("#pageSummary").textContent = claims.length ? `Showing ${state.page * PAGE_SIZE + 1}–${Math.min((state.page + 1) * PAGE_SIZE, claims.length)} of ${claims.length.toLocaleString()}` : "Showing 0 claims";
   $("#prevPage").disabled = state.page === 0;
@@ -79,6 +79,7 @@ function renderDrawer() {
   if (!state.selected) return;
   const claim = state.claims.find((item) => item.id === state.selected);
   if (!claim) return;
+  const focusedControl = $("#drawer").contains(document.activeElement) ? document.activeElement : null;
   const result = evaluation(claim);
   const investigation = state.decisions[claim.id];
   const reconciled = reconcile(result, investigation);
@@ -96,10 +97,37 @@ function renderDrawer() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.decisions));
     renderDrawer();
   });
+  if (focusedControl) {
+    const replacement = focusedControl.id
+      ? document.getElementById(focusedControl.id)
+      : [...$("#drawer").querySelectorAll("[data-decision]")].find((button) => button.dataset.decision === focusedControl.dataset.decision);
+    (replacement || $("#closeDrawer")).focus({ preventScroll: true });
+  }
 }
 
-function openDrawer(id) { state.selected = id; $("#scrim").hidden = false; $("#drawer").classList.add("open"); $("#drawer").setAttribute("aria-hidden", "false"); renderDrawer(); }
-function closeDrawer() { state.selected = null; $("#scrim").hidden = true; $("#drawer").classList.remove("open"); $("#drawer").setAttribute("aria-hidden", "true"); }
+let drawerTrigger = null;
+function openDrawer(id) {
+  drawerTrigger = document.activeElement;
+  state.selected = id;
+  $("#scrim").hidden = false;
+  $("#drawer").inert = false;
+  $("#drawer").classList.add("open");
+  $("#drawer").setAttribute("aria-hidden", "false");
+  renderDrawer();
+  $("#closeDrawer").focus();
+  $(".app-shell").inert = true;
+}
+function closeDrawer() {
+  if (!state.selected) return;
+  state.selected = null;
+  $(".app-shell").inert = false;
+  if (drawerTrigger?.isConnected) drawerTrigger.focus({ preventScroll: true });
+  else $("#searchInput").focus({ preventScroll: true });
+  $("#scrim").hidden = true;
+  $("#drawer").classList.remove("open");
+  $("#drawer").setAttribute("aria-hidden", "true");
+  $("#drawer").inert = true;
+}
 function renderAll() { renderMetrics(); renderQueue(); renderDrawer(); }
 
 async function init() {
@@ -123,6 +151,19 @@ $("#prevPage").onclick = () => { state.page--; renderQueue(); };
 $("#nextPage").onclick = () => { state.page++; renderQueue(); };
 $("#claimRows").addEventListener("click", (event) => { const row = event.target.closest("tr[data-id]"); if (row) openDrawer(row.dataset.id); });
 $("#scrim").onclick = closeDrawer;
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+document.addEventListener("keydown", (event) => {
+  if (!state.selected) return;
+  if (event.key === "Escape") closeDrawer();
+  if (event.key !== "Tab") return;
+  const controls = [...$("#drawer").querySelectorAll("button:not(:disabled), textarea, input, a[href]")];
+  const first = controls[0], last = controls.at(-1);
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
+});
 $("#resetButton").onclick = () => { localStorage.removeItem(STORAGE_KEY); state.decisions = {}; state.outage = null; renderAll(); };
 init();

@@ -82,7 +82,7 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 		session := AuthorSessionID(in.ID, attempt)
 		authorCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{WorkflowID: session, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE})
 		var outcome agentruntime.Outcome
-		input := agentruntime.Input{ID: session, Task: in.Task, Prompt: prompt, MaxTurns: in.MaxTurns, DatasetID: in.DatasetID, ParentReleaseID: in.ParentReleaseID, TargetNode: in.NodeID, ResumeSessionID: previous}
+		input := agentruntime.Input{ID: session, Task: in.Task, Prompt: prompt, MaxTurns: in.MaxTurns, DatasetID: in.DatasetID, ParentReleaseID: in.ParentReleaseID, TargetNode: in.NodeID, PolicyID: in.PolicyID, ResumeSessionID: previous}
 		if err = workflow.ExecuteChildWorkflow(authorCtx, agentruntime.AgentWorkflow, input).Get(ctx, &outcome); err != nil {
 			return "", err
 		}

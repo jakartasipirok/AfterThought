@@ -79,3 +79,37 @@ func TestAutoReviewRequiresExplicitToggleAndSameOrigin(t *testing.T) {
 		t.Fatalf("cross-origin toggle admitted: %d", w.Code)
 	}
 }
+
+func TestPolicyDecisionsRequireExplicitConfirmationAndSameOrigin(t *testing.T) {
+	for _, tc := range []struct{ body, origin string }{
+		{`{"decision":"approve","actor":"reviewer"}`, ""},
+		{`{"decision":"dismiss","confirmed":false}`, ""},
+		{`{"decision":"approve","confirmed":true}`, "https://untrusted.example"},
+	} {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:8080/api/policy-proposals/test/decision", bytes.NewBufferString(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		if tc.origin != "" {
+			r.Header.Set("Origin", tc.origin)
+		}
+		w := httptest.NewRecorder()
+		(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Fatalf("unconfirmed or cross-origin policy decision admitted: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestPolicyReviewRejectsUnrequestedDraftsAndInvalidScope(t *testing.T) {
+	for _, tc := range []struct{ path, body string }{
+		{"/api/auto-reviews/review/draft", `{"requested":false}`},
+		{"/api/auto-review/run", `{"task":"../invalid"}`},
+	} {
+		r := httptest.NewRequest("POST", "http://127.0.0.1:8080"+tc.path, bytes.NewBufferString(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		(&Server{Pipeline: &pipeline.Service{}}).Handler().ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatalf("invalid request accepted: %d", w.Code)
+		}
+	}
+}

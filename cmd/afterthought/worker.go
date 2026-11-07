@@ -57,6 +57,7 @@ func startWorker(ctx context.Context, db *storage.DB, files *storage.Files, c cl
 	w.RegisterWorkflow(pipeline.BuildWorkflow)
 	w.RegisterWorkflow(pipeline.BatchWorkflow)
 	w.RegisterWorkflow(pipeline.AutoReviewWorkflow)
+	w.RegisterWorkflow(pipeline.PolicyReviewWorkflow)
 	w.RegisterActivity(&pipeline.Activities{Service: s})
 	if err = w.Start(); err != nil {
 		return nil, err

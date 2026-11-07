@@ -1,4 +1,5 @@
-import { createAPI, escapeHtml as esc, displayStatus, statusClass, summarizeUsage, toolEvents, parseJSON, candidateGraph, memoryPresentation } from "./agent-client.mjs";
+import { activityMarkup } from "./authoring-trace.mjs";
+import { createAPI, escapeHtml as esc, displayStatus, statusClass, summarizeUsage, toolEvents, candidateGraph, memoryPresentation } from "./agent-client.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const api = createAPI();
@@ -29,14 +30,6 @@ function renderSessions() {
   $("#sessionList").innerHTML = state.sessions.map((session) => `<button type="button" class="session-card ${session.id === state.selected ? "selected" : ""}" data-session="${esc(session.id)}" aria-pressed="${session.id === state.selected}"><strong title="${esc(session.id)}">${esc(session.id)}</strong><div class="session-card-footer">${badge(session.id === state.selected && state.detail ? currentStatus() : session.status)}<time>${esc(formatDate(session.created_at))}</time></div><small>${esc(sessionTask(session))}</small></button>`).join("") || '<p class="empty-state">No sessions yet. Describe a task above to start with an empty workspace.</p>';
 }
 
-function toolMarkup(event) {
-  const args = parseJSON(event.arguments, {});
-  const detail = args.path || args.command || "";
-  const result = event.result;
-  const outcome = result?.is_error ? "Error" : event.status === "completed" ? "Completed" : event.status === "running" ? "Running" : "Pending";
-  return `<details class="trace-event" data-call="${esc(event.id)}"><summary><span class="tool-name">${esc(event.name)}</span><span class="tool-detail">${esc(detail)}</span><span class="tool-state ${result?.is_error ? "error" : ""}">${outcome}</span></summary><div class="trace-label">Arguments</div><pre>${esc(JSON.stringify(args, null, 2))}</pre><div class="trace-label">${result ? `Tool output${result.truncated ? " · truncated by harness" : ""}${result.exit_code !== undefined ? ` · exit ${esc(result.exit_code)}` : ""}` : "Awaiting recorded tool output"}</div>${result ? `<pre class="trace-output">${esc(result.output ?? "")}</pre>` : '<div class="tool-message">The journal will update when this execution returns.</div>'}</details>`;
-}
-
 function renderFilePreview() {
   const host = $("#filePreview");
   if (!host || !state.file || state.file.session !== state.selected) return;
@@ -56,7 +49,7 @@ function renderFilePreview() {
 function renderDetail() {
   const detail = state.detail;
   if (!detail) return;
-  const openCalls = new Set([...document.querySelectorAll(".trace-event[open]")].map((element) => element.dataset.call));
+  const openCalls = new Set([...document.querySelectorAll(".trace-event[open]")].map((element) => element.dataset.trace || element.dataset.call));
   const scroll = $(".trace-list")?.scrollTop || 0;
   const session = detail.session || { id: state.selected, task: state.task };
   const status = currentStatus();
@@ -70,8 +63,8 @@ function renderDetail() {
   const prompt = [...transcript].reverse().find((message) => message.role === "user");
   const memories = transcript.filter((message) => message.role === "user" && /^(Prior task memory|Hindsight recalled learning evidence)/.test(message.content));
   $("#detailStatus").innerHTML = badge(status);
-  $("#sessionDetail").innerHTML = `<div class="session-meta"><code>${esc(session.id)}</code><span>Scope: ${esc(sessionTask(session) || state.task)}</span><button type="button" class="text-button" data-reuse-scope>Use this scope for next session ↗</button><a href="http://127.0.0.1:8233" target="_blank" rel="noopener noreferrer">Temporal dashboard ↗</a></div>${detail.warning ? `<div class="detail-warning">${esc(detail.warning)}</div>` : ""}<div class="run-summary"><div><span>Model turns recorded</span><strong>${number(detail.progress?.turns || usage.calls)}</strong></div><div><span>Tool outcomes</span><strong>${number(events.filter((event) => event.status === "completed").length)} / ${number(events.length)} returned${toolErrors ? ` · ${number(toolErrors)} error${toolErrors === 1 ? "" : "s"}` : ""}</strong></div><div><span>Files authored</span><strong>${number((detail.files || []).length)}</strong></div></div>${prompt ? `<details class="trace-event input-evidence"><summary>Task input</summary><pre>${esc(prompt.content)}</pre></details>` : ""}${memories.length ? `<details class="trace-event input-evidence"><summary>Learning context recalled before authoring · ${memories.length} source${memories.length === 1 ? "" : "s"}</summary>${memories.map((message) => `<pre>${esc(message.content)}</pre>`).join("")}</details>` : ""}${failed ? '<div class="detail-warning">This session ended without a successful authoring completion. Retained files and tool outputs remain available for review.</div>' : ""}<section class="detail-section"><h3>${/completed/i.test(status) ? "Agent result" : "Latest visible response"}</h3>${result ? `<p class="result-text">${esc(result)}</p>` : '<p class="pending-note">Waiting for the next model or tool result. Sessions continue durably when this page is closed.</p>'}</section><section class="detail-section"><h3>Tool execution trace <span class="muted">· read / bash / edit / write</span></h3><div class="trace-list">${events.map(toolMarkup).join("") || '<p class="pending-note">No tool calls recorded yet.</p>'}</div></section><section class="detail-section"><h3>Workspace files <span class="muted">· generated by this session</span></h3><div class="files-list">${(detail.files || []).map((file) => `<button type="button" class="file-link ${state.file?.path === file.path ? "selected" : ""}" data-file="${esc(file.path)}">${esc(file.path)}<small>${number(file.size)} B</small></button>`).join("") || '<p class="pending-note">Files appear here after the agent writes them.</p>'}</div><div id="filePreview"></div></section>`;
-  document.querySelectorAll(".trace-event").forEach((element) => { element.open = openCalls.has(element.dataset.call); });
+  $("#sessionDetail").innerHTML = `<div class="session-meta"><code>${esc(session.id)}</code><span>Scope: ${esc(sessionTask(session) || state.task)}</span><button type="button" class="text-button" data-reuse-scope>Use this scope for next session ↗</button><a href="http://127.0.0.1:8233" target="_blank" rel="noopener noreferrer">Temporal dashboard ↗</a></div>${detail.warning ? `<div class="detail-warning">${esc(detail.warning)}</div>` : ""}<div class="run-summary"><div><span>Model turns recorded</span><strong>${number(detail.progress?.turns || usage.calls)}</strong></div><div><span>Tool outcomes</span><strong>${number(events.filter((event) => event.status === "completed").length)} / ${number(events.length)} returned${toolErrors ? ` · ${number(toolErrors)} error${toolErrors === 1 ? "" : "s"}` : ""}</strong></div><div><span>Files authored</span><strong>${number((detail.files || []).length)}</strong></div></div>${prompt ? `<details class="trace-event input-evidence"><summary>Task input</summary><pre>${esc(prompt.content)}</pre></details>` : ""}${memories.length ? `<details class="trace-event input-evidence"><summary>Learning context recalled before authoring · ${memories.length} source${memories.length === 1 ? "" : "s"}</summary>${memories.map((message) => `<pre>${esc(message.content)}</pre>`).join("")}</details>` : ""}${failed ? '<div class="detail-warning">This session ended without a successful authoring completion. Retained files and tool outputs remain available for review.</div>' : ""}<section class="detail-section"><h3>${/completed/i.test(status) ? "Agent result" : "Latest visible response"}</h3>${result ? `<p class="result-text">${esc(result)}</p>` : '<p class="pending-note">Waiting for the next model or tool result. Sessions continue durably when this page is closed.</p>'}</section><section class="detail-section"><h3>Model responses and tool activity</h3>${activityMarkup(detail)}</section><section class="detail-section"><h3>Workspace files <span class="muted">· generated by this session</span></h3><div class="files-list">${(detail.files || []).map((file) => `<button type="button" class="file-link ${state.file?.path === file.path ? "selected" : ""}" data-file="${esc(file.path)}">${esc(file.path)}<small>${number(file.size)} B</small></button>`).join("") || '<p class="pending-note">Files appear here after the agent writes them.</p>'}</div><div id="filePreview"></div></section>`;
+  document.querySelectorAll(".trace-event").forEach((element) => { element.open = openCalls.has(element.dataset.trace || element.dataset.call); });
   if ($(".trace-list")) $(".trace-list").scrollTop = scroll;
   renderFilePreview();
 }
@@ -207,7 +200,7 @@ $("#sessionForm").addEventListener("submit", async (event) => {
     formStatus("#startStatus", `${response.duplicate ? "Reconnected to" : "Started"} ${response.id || payload.id}. Follow the execution below.`);
     await selectSession(response.id || payload.id, response.task || payload.task);
     await refresh();
-    $("#sessionPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    $("#sessionPanel").scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest" });
   } catch (error) {
     if (error.status && error.status < 500) state.pendingStart = null;
     formStatus("#startStatus", `${errorMessage(error)}${state.pendingStart ? " Retry keeps the same session ID to avoid duplicate work." : ""}`, true);
@@ -226,7 +219,7 @@ $("#sessionDetail").onclick = (event) => {
     $("#taskInput").value = state.task;
     formStatus("#startStatus", `Learning scope set to ${state.task}. Your task draft is unchanged; describe the next iteration before starting.`);
     $("#taskInput").focus();
-    $("#sessionForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    $("#sessionForm").scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
     return;
   }
   const button = event.target.closest("[data-file]");

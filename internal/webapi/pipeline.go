@@ -22,6 +22,7 @@ import (
 )
 
 func (s *Server) pipelineRoutes(m *http.ServeMux) {
+	s.policyRoutes(m)
 	m.HandleFunc("GET /api/auto-review", s.autoReviewStatus)
 	m.HandleFunc("PUT /api/auto-review", s.setAutoReview)
 	m.HandleFunc("POST /api/datasets", s.uploadDataset)
@@ -155,6 +156,35 @@ func (s *Server) startBuild(w http.ResponseWriter, r *http.Request, in pipeline.
 	if in.MaxTurns < 1 || in.MaxTurns > 32 || len(in.Prompt) > 12000 {
 		failure(w, 400, "use a turn budget1..32 and prompt up to12000 bytes")
 		return
+	}
+	if in.PolicyID == "" {
+		previous, lookupErr := s.Pipeline.Job(r.Context(), in.ID)
+		if lookupErr == nil {
+			in.PolicyID = previous.PolicyID
+		} else if errors.Is(lookupErr, pgx.ErrNoRows) {
+			policy, policyErr := s.Pipeline.CurrentPolicy(r.Context(), in.Task)
+			if policyErr != nil {
+				pipelineError(w, policyErr)
+				return
+			}
+			if policy != nil {
+				in.PolicyID = policy.ID
+			}
+		} else {
+			pipelineError(w, lookupErr)
+			return
+		}
+	}
+	if in.PolicyID != "" {
+		policy, policyErr := s.Pipeline.Policy(r.Context(), in.PolicyID)
+		if policyErr != nil {
+			pipelineError(w, policyErr)
+			return
+		}
+		if policy.Task != in.Task {
+			failure(w, 400, "policy belongs to a different scope")
+			return
+		}
 	}
 	d, err := s.Pipeline.Datasets.Get(r.Context(), in.DatasetID)
 	if err != nil {

@@ -1,6 +1,8 @@
+import { activityLoader } from "./authoring-trace.mjs";
+import { initPolicyDemo } from "./policy-demo.mjs";
 import { createGraphAPI, escapeHtml as esc, featureColumns, probability, evaluationGates, servingCounters, predictionPreview, graphLayout } from "./graph-client.mjs";
 import { displayStatus, statusClass } from "./agent-client.mjs";
-import { createSyntheticDemoCSV } from "./demo-data.mjs";
+import { createSyntheticDemoCSV, createPolicyDemoCSV } from "./demo-data.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const api = createGraphAPI();
@@ -12,6 +14,8 @@ const state = {
   runID: params.get("run"), run: null, preview: [], health: null, polling: false, loading: false,
   autoReview: null, pendingBootstrap: null, pendingTune: null, pendingBatch: null, submitting: new Set(),
 };
+const buildActivity = activityLoader(api, $("#buildActivity"));
+const policyDemo = initPolicyDemo(api, () => state.task, refresh);
 $("#graphTask").value = state.task;
 const num = (value) => typeof value === "number" ? value.toLocaleString() : "—";
 const pretty = (value) => JSON.stringify(value, null, 2);
@@ -174,7 +178,7 @@ async function loadJob() {
   try {
     const data = await api(`/bootstraps/${encodeURIComponent(id)}`);
     if (id !== state.jobID) return;
-    state.job = data.job || data; renderJobs();
+    state.job = data.job || data; renderJobs(); await buildActivity(state.job.session_id);
     const releaseID = data.release?.id || state.job.release_id;
     const newRelease = releaseID && state.seenJobRelease !== `${id}/${releaseID}`;
     if (newRelease) state.seenJobRelease = `${id}/${releaseID}`;
@@ -228,10 +232,17 @@ function renderAutoReview() {
   const latest = review.latest;
   if (!latest) { $("#autoReviewLatest").innerHTML = ""; return; }
   const ready = latest.status === "awaiting_approval";
-  $("#autoReviewLatest").innerHTML = `<h3>${ready ? "Improvement ready for review" : esc(displayStatus(latest.status))}</h3><p>${esc(latest.summary)}</p>${latest.build?.node_id ? `<p>Selected node <strong>${esc(latest.build.node_id)}</strong></p>` : ""}${latest.candidate_id ? '<button type="button" class="secondary-button" id="inspectAutoCandidate">Inspect candidate and approval evidence →</button>' : ""}`;
+  const pattern = latest.kind === "emerging_pattern";
+  $("#autoReviewLatest").innerHTML = `<h3>${pattern ? "Suspected emerging pattern" : ready ? "Improvement ready for review" : esc(displayStatus(latest.status))}</h3><p>${esc(latest.summary)}</p>${pattern ? `<p class="form-hint">${esc(displayStatus(latest.status))} · A numerical departure is a hypothesis, not a confirmed scam.</p><div class="table-scroll"><table class="evaluation-table"><thead><tr><th>Signal</th><th>Training range</th><th>Unusual batch values</th><th>Affected rows</th></tr></thead><tbody>${(latest.novelty || []).map(signal => `<tr><td>${esc(signal.feature)}</td><td>${num(signal.training_min)}–${num(signal.training_max)}</td><td>${num(signal.batch_min)}–${num(signal.batch_max)}</td><td>${num(signal.count)} / ${num(signal.rows)}</td></tr>`).join("")}</tbody></table></div>` : ""}${latest.status === "needs_policy" ? '<p>Upload a company policy above, then request a cited draft.</p><button type="button" class="secondary-button" id="draftPolicy">Draft policy amendment</button>' : ""}${latest.build?.node_id ? `<p>Selected node <strong>${esc(latest.build.node_id)}</strong></p>` : ""}${latest.candidate_id ? '<button type="button" class="secondary-button" id="inspectAutoCandidate">Inspect candidate and approval evidence →</button>' : ""}`;
+  if ($("#draftPolicy")) $("#draftPolicy").onclick = async () => {
+    $("#draftPolicy").disabled = true;
+    try { await api(`/auto-reviews/${encodeURIComponent(latest.id)}/draft`, { method: "POST", body: { requested: true } }); await refresh(); }
+    catch (error) { status("#autoReviewStatus", errorText(error), true); }
+    finally { if ($("#draftPolicy")) $("#draftPolicy").disabled = false; }
+  };
   if (latest.candidate_id) $("#inspectAutoCandidate").onclick = async () => {
     await chooseRelease(latest.candidate_id);
-    $("#releasePanel").scrollIntoView({ behavior: "smooth" });
+    $("#releasePanel").scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   };
 }
 
@@ -285,7 +296,7 @@ async function refresh() {
         if (listed?.graph) setRelease(listed); else await chooseRelease(state.releaseID);
       }
     }
-    await Promise.allSettled([loadJob(), loadRun()]);
+    await Promise.allSettled([loadJob(), loadRun(), policyDemo.load(state.autoReview?.latest)]);
     renderMetrics(); updateControls();
   } finally { state.polling = false; }
 }
@@ -294,7 +305,7 @@ $("#scopeForm").onsubmit = (event) => {
   event.preventDefault();
   const task = $("#graphTask").value.trim(); if (!task || task === state.task) { refresh(); return; }
   state.autoReview = null; renderAutoReview();
-  state.task = task; state.datasets = []; state.dataset = null; state.datasetID = null; state.jobs = []; state.jobID = null; state.job = null;
+  state.task = task; policyDemo.reset(); buildActivity(null); state.datasets = []; state.dataset = null; state.datasetID = null; state.jobs = []; state.jobID = null; state.job = null;
   state.releases = []; state.release = null; state.releaseID = null; state.releaseKey = ""; state.activeID = ""; state.node = null; state.nodeSource = null; state.sourceRequest++;
   state.tuneTarget = null; state.run = null; state.runID = null; state.preview = []; state.pendingBootstrap = null; state.pendingTune = null; state.pendingBatch = null; state.releaseRequest++; state.seenJobRelease = null;
   $("#releaseDetail").innerHTML = '<p class="empty-state">Select a release in this scope.</p>'; $("#releaseStatus").innerHTML = ""; $("#releaseHeading").textContent = "Fit and serve graphs";
@@ -328,12 +339,12 @@ function selectCSVFile(selector, content, name) {
   $(selector).files = transfer.files;
 }
 
-$("#prepareDemo").onclick = () => {
+async function prepareDemo(insurance = false) {
   try {
-    const demo = createSyntheticDemoCSV();
+    const demo = insurance ? createPolicyDemoCSV() : createSyntheticDemoCSV();
     selectCSVFile("#datasetFile", demo.evaluationCSV, "synthetic-classification.csv");
     selectCSVFile("#batchFile", demo.inferenceCSV, "synthetic-inference.csv");
-    $("#datasetName").value = "Synthetic classification · 5,000 rows";
+    $("#datasetName").value = insurance ? "Synthetic motor claims · 1,000 rows" : "Synthetic classification · 5,000 rows";
     $("#targetColumn").value = demo.target;
     $("#positiveLabel").value = demo.positiveLabel;
     $("#featureColumns").value = demo.featureColumns.join(",");
@@ -345,14 +356,31 @@ $("#prepareDemo").onclick = () => {
     $("#maxFPR").value = "0.15";
     $("#scoreThreshold").value = "0.50";
     $("#uploadDetails").open = true;
-    if (!$("#bootstrapPrompt").value.trim()) {
+    if (insurance || !$("#bootstrapPrompt").value.trim()) {
       $("#bootstrapPrompt").value = "Build a reproducible binary classifier for this synthetic target. Inspect the feature profile and training/development data, then choose an appropriate model from the observed data. Author meaningful separate fit and serving nodes with tunable configuration and focused tests, following graph-authoring.md. Return probabilities, recommended decisions, and understandable reasons. Serving must use ordinary code without LLM calls. Do not attempt promotion.";
     }
-    status("#demoDataStatus", "Prepared 5,000 synthetic rows and a label-free inference CSV. Review the form, confirm the generated labels, then upload and freeze the dataset.");
-    status("#batchStatus", "Synthetic inference CSV selected: 5,000 rows with signal, context, and noise. Choose an approved demo release to run it.");
+    if (insurance) { $("#bootstrapPrompt").value += " Read the company policy and align the recommended routing and reasons with its investigator-review procedures. Treat the synthetic label as a demonstration target only."; await policyDemo.prepareSample(); }
+    status("#demoDataStatus", `Prepared ${demo.rowCount.toLocaleString()} synthetic rows and a label-free inference CSV. Review the form, confirm the generated labels, then upload and freeze the dataset.`);
+    status("#batchStatus", `Synthetic batch selected with ${demo.featureColumns.join(", ")}. Choose an approved demo release to run it.`);
   } catch (error) { status("#demoDataStatus", `Could not prepare demo CSVs: ${errorText(error)}`, true); }
 };
 
+$("#prepareDemo").onclick = () => prepareDemo(false);
+$("#preparePolicyDemo").onclick = () => prepareDemo(true);
+$("#prepareEmergingBatch").onclick = () => {
+  const demo = createPolicyDemoCSV();
+  selectCSVFile("#batchFile", demo.emergingCSV, "synthetic-emerging-pattern.csv"); state.pendingBatch = null;
+  status("#batchStatus", "1,000 fictional claims selected: evidence_reuse_count shifts from 0–2 to 8–12. Use the insurance demo graph, run it, then click Review now.");
+};
+$("#reviewNow").onclick = async () => {
+  if (state.submitting.has("reviewNow")) return;
+  const task = state.task; state.submitting.add("reviewNow"); $("#reviewNow").disabled = true;
+  try {
+    await api("/auto-review/run", { method: "POST", body: { task } });
+    if (task === state.task) { status("#autoReviewStatus", "Review requested. Any proposed change waits for your decision."); $("#reviewActivityPanel").open = true; await refresh(); }
+  } catch (error) { if (task === state.task) status("#autoReviewStatus", errorText(error), true); }
+  finally { state.submitting.delete("reviewNow"); $("#reviewNow").disabled = false; }
+};
 $("#prepareDemoBatch").onclick = () => {
   try {
     const demo = createSyntheticDemoCSV();

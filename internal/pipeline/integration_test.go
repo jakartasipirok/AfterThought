@@ -159,18 +159,21 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 		if len(request.Tools) != 4 {
 			t.Error("pipeline expanded the four model-visible tools")
 		}
-		tuning, repairing, toolDone := false, false, false
+		tuning, repairing, toolDone, policyReview := false, false, false, false
 		for _, message := range request.Messages {
 			if strings.Contains(message.Content, strings.TrimSpace(string(approvalKey))) {
 				t.Error("host approval key was exposed to the author")
 			}
+			policyReview = policyReview || strings.Contains(message.Content, "policy-review.md")
 			tuning = tuning || strings.Contains(message.Content, "Improve ONLY node serve:score")
 			repairing = repairing || strings.Contains(message.Content, "Improve ONLY node serve:prepare")
 			toolDone = toolDone || message.Role == "tool"
 		}
 		message := model.Message{Role: "assistant", Content: "Candidate files are ready for trusted execution and evaluation; no approval was performed."}
 		finish := "stop"
-		if !toolDone {
+		if policyReview {
+			message, finish = mockPolicyResponse(request.Messages)
+		} else if !toolDone {
 			finish = "tool_calls"
 			message.Content = ""
 			if repairing {
@@ -196,6 +199,7 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 	w.RegisterWorkflow(BuildWorkflow)
 	w.RegisterWorkflow(BatchWorkflow)
 	w.RegisterWorkflow(AutoReviewWorkflow)
+	w.RegisterWorkflow(PolicyReviewWorkflow)
 	w.RegisterWorkflow(agentruntime.AgentWorkflow)
 	w.RegisterWorkflow(execution.GraphWorkflow)
 	w.RegisterActivity(&Activities{Service: service})
@@ -355,5 +359,8 @@ func TestIntegrationAuthorEvaluateApproveServe5000AndTuneOneNode(t *testing.T) {
 	}
 	t.Run("automatic robustness review", func(t *testing.T) {
 		testAutoReviewRepair(t, ctx, service, temporal, queue, tuned, input, result, &modelCalls)
+	})
+	t.Run("emerging pattern policy review", func(t *testing.T) {
+		testPolicyReview(t, ctx, service, temporal, queue, &modelCalls)
 	})
 }

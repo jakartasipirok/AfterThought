@@ -43,19 +43,26 @@ type BatchSignal struct {
 	Rows      int            `json:"rows"`
 	Missing   map[string]int `json:"missing"`
 	CreatedAt time.Time      `json:"created_at"`
+	Novelty   []Novelty      `json:"novelty,omitempty"`
 }
 type AutoReview struct {
-	ID           string         `json:"id"`
-	Task         string         `json:"task"`
-	ParentID     string         `json:"parent_release_id"`
-	Status       string         `json:"status"`
-	Build        BuildInput     `json:"build"`
-	CandidateID  string         `json:"candidate_id,omitempty"`
-	Summary      string         `json:"summary"`
-	FailureCount int            `json:"failure_count"`
-	Rows         int            `json:"rows"`
-	Missing      map[string]int `json:"missing"`
-	CreatedAt    time.Time      `json:"created_at"`
+	Manual         bool           `json:"manual,omitempty"`
+	Kind           string         `json:"kind,omitempty"`
+	PolicyID       string         `json:"policy_id,omitempty"`
+	SessionID      string         `json:"session_id,omitempty"`
+	Novelty        []Novelty      `json:"novelty,omitempty"`
+	PatternBatchID string         `json:"pattern_batch_id,omitempty"`
+	ID             string         `json:"id"`
+	Task           string         `json:"task"`
+	ParentID       string         `json:"parent_release_id"`
+	Status         string         `json:"status"`
+	Build          BuildInput     `json:"build"`
+	CandidateID    string         `json:"candidate_id,omitempty"`
+	Summary        string         `json:"summary"`
+	FailureCount   int            `json:"failure_count"`
+	Rows           int            `json:"rows"`
+	Missing        map[string]int `json:"missing"`
+	CreatedAt      time.Time      `json:"created_at"`
 }
 type AutoReviewStatus struct {
 	Enabled         bool        `json:"enabled"`
@@ -75,7 +82,10 @@ CREATE TABLE IF NOT EXISTS graph_batch_signals(seq bigserial PRIMARY KEY, batch_
 CREATE INDEX IF NOT EXISTS graph_batch_signals_window ON graph_batch_signals(task_id,release_id,seq);
 CREATE TABLE IF NOT EXISTS graph_auto_reviews(id text PRIMARY KEY, task_id text NOT NULL, parent_id text NOT NULL, status text NOT NULL, candidate_id text NOT NULL DEFAULT '', payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS graph_auto_reviews_pending ON graph_auto_reviews(task_id,parent_id,status);`)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.migratePolicies(ctx)
 }
 
 // Signals contain counts and trusted node identifiers, never source rows, model
@@ -125,6 +135,10 @@ func (s *Service) recordBatchSignal(ctx context.Context, b Batch) error {
 			signal.NodeID = "serve:" + release.Graph.Serve.Output
 			signal.Kind = "invalid_output"
 		}
+	}
+	signal.Novelty, err = s.batchNovelty(ctx, b, data)
+	if err != nil {
+		return err
 	}
 	// Serialize sequence allocation and commit with window consumption. A late
 	// commit must never appear behind an already-consumed sequence cursor.
@@ -218,6 +232,15 @@ func (s *Service) AutoReviewStatus(ctx context.Context, task string) (AutoReview
 // ClaimReview consumes exactly one 50-batch window while holding the task lock.
 // It reserves durable work before the Temporal dispatch; lost start acks are safe.
 func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, error) {
+	return s.claimReview(ctx, task, false)
+}
+
+// ReviewNow consumes available evidence through the same review gates.
+func (s *Service) ReviewNow(ctx context.Context, task string) (*AutoReview, error) {
+	return s.claimReview(ctx, task, true)
+}
+
+func (s *Service) claimReview(ctx context.Context, task string, manual bool) (*AutoReview, error) {
 	tx, err := s.DB.Pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -225,6 +248,11 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, task); err != nil {
 		return nil, err
+	}
+	if manual {
+		if _, err = tx.Exec(ctx, `INSERT INTO graph_review_settings(task_id) VALUES($1) ON CONFLICT DO NOTHING`, task); err != nil {
+			return nil, err
+		}
 	}
 	var enabled bool
 	var after int64
@@ -236,7 +264,7 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 	if err != nil {
 		return nil, err
 	}
-	if !enabled || time.Now().Before(cooldown) {
+	if (!enabled && !manual) || time.Now().Before(cooldown) {
 		return nil, nil
 	}
 	var parent Release
@@ -252,7 +280,7 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 		return nil, err
 	}
 	var pending bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM graph_auto_reviews WHERE task_id=$1 AND parent_id=$2 AND status IN ('queued','running','awaiting_approval'))`, task, parent.ID).Scan(&pending); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM graph_auto_reviews WHERE task_id=$1 AND parent_id=$2 AND status IN ('queued','running','awaiting_approval','awaiting_policy_review','needs_policy'))`, task, parent.ID).Scan(&pending); err != nil {
 		return nil, err
 	}
 	if pending {
@@ -283,14 +311,32 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(signals) < ReviewBatchInterval {
+	if len(signals) == 0 || (!manual && len(signals) < ReviewBatchInterval) {
 		return nil, nil
 	}
-	r := AutoReview{Task: task, ParentID: parent.ID, Status: "no_action", CreatedAt: time.Now().UTC(), Missing: map[string]int{}}
+	r := AutoReview{Manual: manual, Task: task, ParentID: parent.ID, Status: "no_action", Kind: "robustness", CreatedAt: time.Now().UTC(), Missing: map[string]int{}}
+	var policyID string
+	err = tx.QueryRow(ctx, `SELECT document_id FROM policy_channels WHERE task_id=$1`, task).Scan(&policyID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
 	var trigger *BatchSignal
 	for i := range signals {
 		signal := &signals[i]
 		r.Rows += signal.Rows
+		fresh := []Novelty{}
+		for _, novelty := range signal.Novelty {
+			var seen bool
+			if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM policy_pattern_decisions WHERE task_id=$1 AND policy_id=$2 AND pattern_id=$3)`, task, policyID, novelty.ID).Scan(&seen); err != nil {
+				return nil, err
+			}
+			if !seen {
+				fresh = append(fresh, novelty)
+			}
+		}
+		if len(fresh) > 0 {
+			r.Novelty, r.PatternBatchID = fresh, signal.BatchID
+		}
 		for name, count := range signal.Missing {
 			r.Missing[name] += count
 		}
@@ -307,7 +353,7 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 	}
 	last := signals[len(signals)-1].Sequence
 	r.ID = "auto-review-" + strings.TrimPrefix(graph.Hash([]byte(fmt.Sprintf("%s/%s/%d", task, parent.ID, last))), "sha256:")[:40]
-	r.Summary = fmt.Sprintf("Checked %d finished batches with %d failures. Across %d rows, missing-value counts are %s. This window required no authoring-model calls.", ReviewBatchInterval, r.FailureCount, r.Rows, encode(r.Missing))
+	r.Summary = fmt.Sprintf("Checked %d finished batches with %d failures. Across %d rows, missing-value counts are %s. This window required no authoring-model calls.", len(signals), r.FailureCount, r.Rows, encode(r.Missing))
 	if trigger != nil {
 		var batch Batch
 		var raw []byte
@@ -318,9 +364,19 @@ func (s *Service) ClaimReview(ctx context.Context, task string) (*AutoReview, er
 			return nil, err
 		}
 		r.Status = "queued"
-		r.Summary = fmt.Sprintf("Review after %d finished batches with %d failures. The trigger is %s at %s. Across %d rows, missing-value counts are %s. Replay the triggering batch and evaluate the repair before human review.", ReviewBatchInterval, r.FailureCount, trigger.Kind, trigger.NodeID, r.Rows, encode(r.Missing))
-		r.Build = BuildInput{ID: r.ID, Task: task, DatasetID: parent.DatasetID, ParentReleaseID: parent.ID, NodeID: trigger.NodeID, MaxTurns: ReviewTurnBudget, AutoReviewID: r.ID, Regression: &RegressionSpec{BatchID: batch.ID, Input: batch.Input}, Prompt: r.Summary + " Improve only the selected node's robustness. Preserve probabilities and decisions on valid inputs. Add focused synthetic tests for the failure, compatible feature types and allowed nulls. Use existing development evidence and attributed memory. Never approve or activate."}
+		r.Summary = fmt.Sprintf("Review after %d finished batches with %d failures. The trigger is %s at %s. Across %d rows, missing-value counts are %s. Replay the triggering batch and evaluate the repair before human review.", len(signals), r.FailureCount, trigger.Kind, trigger.NodeID, r.Rows, encode(r.Missing))
+		r.Build = BuildInput{ID: r.ID, Task: task, DatasetID: parent.DatasetID, ParentReleaseID: parent.ID, NodeID: trigger.NodeID, MaxTurns: ReviewTurnBudget, AutoReviewID: r.ID, PolicyID: policyID, Regression: &RegressionSpec{BatchID: batch.ID, Input: batch.Input}, Prompt: r.Summary + " Improve only the selected node's robustness. Preserve probabilities and decisions on valid inputs. Add focused synthetic tests for the failure, compatible feature types and allowed nulls. Use existing development evidence and attributed memory. Never approve or activate."}
+		r.SessionID = AuthorSessionID(r.ID, 0)
 		cooldown = r.CreatedAt.Add(ReviewCooldown)
+	} else if len(r.Novelty) > 0 {
+		r.Kind, r.Status, r.PolicyID = "emerging_pattern", "queued", policyID
+		r.SessionID = AuthorSessionID(r.ID, 0)
+		r.Summary = fmt.Sprintf("An emerging pattern in batch %s departs from the frozen training range in %d signals. A human must assess whether this suggests a scam, a benign change, or a data issue.", r.PatternBatchID, len(r.Novelty))
+		if policyID == "" {
+			r.Status = "needs_policy"
+		} else {
+			cooldown = r.CreatedAt.Add(ReviewCooldown)
+		}
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO graph_auto_reviews(id,task_id,parent_id,status,payload) VALUES($1,$2,$3,$4,$5)`, r.ID, task, parent.ID, r.Status, encode(r)); err != nil {
 		return nil, err
@@ -388,7 +444,15 @@ func (s *Service) DispatchAutoReviews(ctx context.Context, queue string) error {
 		return err
 	}
 	for _, id := range ids {
-		_, err = s.Temporal.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: "internal/review/" + id, TaskQueue: queue, WorkflowExecutionTimeout: 30 * time.Minute, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE}, AutoReviewWorkflow, id)
+		review, lookupErr := s.Review(ctx, id)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		var reviewWorkflow any = AutoReviewWorkflow
+		if review.Kind == "emerging_pattern" {
+			reviewWorkflow = PolicyReviewWorkflow
+		}
+		_, err = s.Temporal.ExecuteWorkflow(ctx, client.StartWorkflowOptions{ID: "internal/review/" + id, TaskQueue: queue, WorkflowExecutionTimeout: 30 * time.Minute, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE}, reviewWorkflow, id)
 		var duplicate *serviceerror.WorkflowExecutionAlreadyStarted
 		if err != nil && !errors.As(err, &duplicate) {
 			return err
@@ -436,7 +500,7 @@ func (a *Activities) PipelineAutoReviewPrepare(ctx context.Context, id string) (
 	if err != nil {
 		return ReviewWork{}, err
 	}
-	if !status.Enabled || status.ReleaseID != r.ParentID {
+	if (!status.Enabled && !r.Manual) || status.ReleaseID != r.ParentID {
 		r.Status = "cancelled"
 		_, err = s.DB.Pool.Exec(ctx, `UPDATE graph_auto_reviews SET status=$2,payload=$3 WHERE id=$1`, id, r.Status, encode(r))
 		return ReviewWork{}, err
@@ -540,6 +604,16 @@ func (s *Service) reconcileAutoReviews(ctx context.Context) error {
 			if description.GetWorkflowExecutionInfo().GetStatus() == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
 				continue
 			}
+		}
+		review, lookupErr := s.Review(ctx, id)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		if review.Kind == "emerging_pattern" {
+			if err = s.finishPolicyReview(ctx, id); err != nil {
+				return err
+			}
+			continue
 		}
 		finish := ReviewFinish{ID: id, Failed: true}
 		job, err := s.Job(ctx, id)

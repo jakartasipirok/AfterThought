@@ -39,6 +39,7 @@ type Service struct {
 }
 
 type BuildInput struct {
+	PolicyID        string          `json:"policy_id,omitempty"`
 	ID              string          `json:"id"`
 	Task            string          `json:"task"`
 	DatasetID       string          `json:"dataset_id"`

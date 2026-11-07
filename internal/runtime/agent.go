@@ -24,6 +24,8 @@ import (
 const TaskQueue = "afterthought-agent-v1"
 
 type Input struct {
+	PolicyID        string `json:"policy_id,omitempty"`
+	PolicyReviewID  string `json:"policy_review_id,omitempty"`
 	ID              string `json:"id"`
 	Task            string `json:"task"`
 	Prompt          string `json:"prompt"`

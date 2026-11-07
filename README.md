@@ -31,7 +31,7 @@ Press **Ctrl+C** to stop the UI and worker. Run `make down` to stop the supporti
 
 Service dashboards: Temporal at <http://127.0.0.1:8233> and Hindsight at <http://127.0.0.1:9999>.
 
-See the [demo walkthrough](docs/demo.md) for a presentation sequence.
+See the [demo walkthrough](docs/demo.md) for a presentation sequence. The [Technical Design Document](docs/technical-design.md) covers architecture, contracts, recovery, automatic review, and design limitations.
 
 1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
 2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
@@ -49,9 +49,25 @@ The general authoring page still supports prompts, optional dataset URLs, tool t
 
 The **claims replay** is a separate illustrative policy demo. Its fictional rules and browser decisions are not agent-authored or promoted workflows; see [replay details](docs/claims-replay.md). Live sessions do not import that ruleset. Real fraud accuracy requires externally verified labels; the bundled Kaggle extract has none. `CLAIM_STATUS` is excluded from graph features and targets.
 
-This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. The current automatic review handles attributable node failures and invalid outputs. Broader drift analysis, feedback-driven scheduling, shared image registries, multi-tenant authentication, and production claim settlement remain future work.
+This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. Automatic review handles attributable node failures, invalid outputs, and a bounded numerical novelty heuristic. Broader drift analysis, feedback-driven scheduling, shared image registries, multi-tenant authentication, and production claim settlement remain future work.
 
 `bin/afterthought serve --with-worker=false` serves the UI/API with a separately running worker. Use `--addr 127.0.0.1:8081` or `--ui-dir frontend` to change local settings. The server accepts loopback bindings only; it is a local demo with access to agent execution, not an authenticated public service. API calls use the same origin and never send the provider key to the browser.
+
+## Quick policy-learning demo
+
+Restart the server with `make demo`, then open **Graph Runtime**. PDF extraction needs Poppler (`brew install poppler` on macOS; `apt-get install poppler-utils` on Debian).
+
+1. Click **Prepare insurance demo**. This selects 1,000 fictional motor claims, a label-free batch, and the [sample policy PDF](frontend/assets/demo-company-policy.pdf).
+2. Under **Company policy**, enter your name and upload the selected PDF. Confirm the generated label definition, then upload and freeze the CSV.
+3. Author and evaluate a graph. Expand **Agent activity** for recorded model responses, tool requests/results, and provider token counters. These update after calls complete; they are not token streaming.
+4. Review the evaluation and explicitly approve the graph using your host code.
+5. Click **Prepare emerging-pattern batch**, then **Run graph**. The synthetic evidence-reuse count shifts from 0–2 to 8–12; serving still makes zero LLM calls.
+6. Click **Review now**. Expand **Review activity** while the agent reads policy/evidence and drafts an amendment. This checks available batches without enabling or waiting for the 50-batch cadence; cooldown and pending-proposal gates still apply.
+7. Review the hypothesis, exact policy quotes, uncertainty, and proposed addition. Record your assessment and note, then approve the policy amendment or dismiss it with your human identity, host code, and explicit confirmation.
+
+Policy approval publishes a new knowledge version for subsequent graph authoring. It does **not** change the active graph. To apply it in code, select a node, request a revision using the updated policy, evaluate, and approve that graph separately. The source PDF remains unchanged; **Current policy** downloads the version including approved additions as Markdown.
+
+The sample is synthesized from public NICB, Allianz, and Texas Department of Insurance guidance; [sources and editable policy](docs/demo-policy.md). It is fictional, not an insurer’s binding policy. The extended demo fields and generated labels are not claims about the Kaggle dataset. Numerical novelty means “investigate,” not “confirmed new fraud.”
 
 ## Automatic review every 50 batches
 
@@ -59,7 +75,8 @@ In **Graph Runtime**, enable **Auto-review** for the current learning scope afte
 
 The worker checks every 15 seconds and consumes windows of 50 finished batches. At one batch per minute, a window takes about 50 minutes. At five batches per minute, it takes about 10 minutes. The panel shows progress and an estimate from observed completion intervals. Cooldown and pending proposals can delay the next review.
 
-- Healthy windows record an observation without invoking the authoring model.
+- Windows without actionable failures or fresh numerical departures record an observation without invoking the authoring model.
+- A fresh numerical departure can request a cited policy amendment. Runtime repair takes priority when both signals occur. A human judges whether the pattern is suspicious, benign, or needs investigation.
 - An attributable failure selects one serving node for repair. The agent receives node identity, aggregate missing-value counts, and attributed memory. The triggering batch stays in supervisor storage.
 - Each repair has one authoring attempt with up to 12 turns. Repairs have a 10-minute cooldown and one pending automatic proposal per parent release.
 - Candidates undergo frozen development/audit evaluation and a trusted replay of the failed batch. Development F1 must meet the incumbent's result.

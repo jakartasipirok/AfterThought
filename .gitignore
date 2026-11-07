@@ -85,3 +85,6 @@ coverage.out
 *.sqlite3
 *.sqlite-*
 *.sql.gz
+
+# Exported document deliverables (tracked demo PDF lives in frontend/assets)
+/output/

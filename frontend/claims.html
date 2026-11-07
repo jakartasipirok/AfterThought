@@ -7,19 +7,20 @@
   <link rel="stylesheet" href="src/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Skip to content</a>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>DURABLE GRAPH RUNTIME</small></div></div>
+      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>Graph workspace</small></div></div>
       <div class="side-label">WORKSPACE</div>
       <nav aria-label="Workspace" data-workspace-nav data-page="claims"></nav>
       <div class="side-spacer"></div>
       <div class="side-note"><span class="pulse"></span> Illustrative replay<br><small>Fictional rules · browser only</small></div>
       <div class="side-footer">RULESET<br><strong>Motor triage v1.0</strong><small>Fictional example · not agent authored</small></div>
     </aside>
-    <main class="main" id="overview">
-      <header class="topbar"><div class="breadcrumb">Operations <span>/</span> Sample claims replay</div><div class="top-right"><span class="data-pill">● Offline example</span><span class="avatar">AO</span></div></header>
+    <main class="main" id="mainContent" tabindex="-1">
+      <header class="topbar"><div class="breadcrumb">Operations <span>/</span> Sample claims replay</div><div class="top-right"><span class="data-pill">● Offline example</span></div></header>
       <div class="content">
-        <div class="page-title"><div><div class="eyebrow">MOTOR CLAIM TRIAGE</div><h1>Sample claims replay</h1><p>Explore the supplied UI example, separate from real agent sessions.</p></div><button id="resetButton" class="secondary-button">Reset demo decisions</button></div>
+        <div class="page-title"><div><h1>Sample claims replay</h1><p>Explore the supplied UI example, separate from real agent sessions.</p></div><button id="resetButton" class="secondary-button">Reset demo decisions</button></div>
         <div class="notice"><span class="notice-icon">i</span><span><strong>Illustrative replay, not the agent.</strong> Business rules and thresholds are fictional examples. Browser decisions do not enter agent memory. Review flags are not fraud findings, and “Continue” is not payment approval.</span></div>
         <nav aria-label="On this page"><a class="text-button" href="#claim-table">Jump to claim queue ↓</a></nav>
         <section class="metrics" id="metrics" aria-label="Claim outcomes"></section>
@@ -30,7 +31,7 @@
     </main>
   </div>
   <div id="scrim" class="scrim" hidden></div>
-  <aside id="drawer" class="drawer" aria-label="Claim details" aria-hidden="true"></aside>
+  <aside id="drawer" class="drawer" role="dialog" aria-modal="true" aria-label="Claim details" aria-hidden="true" inert></aside>
   <script type="module" src="src/navigation.mjs"></script>
   <script type="module" src="src/app.mjs"></script>
 </body>

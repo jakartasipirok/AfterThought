@@ -10,12 +10,9 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>DURABLE AGENT RUNTIME</small></div></div>
+      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>DURABLE GRAPH RUNTIME</small></div></div>
       <div class="side-label">WORKSPACE</div>
-      <a class="nav-link active" href="./"><span>✦</span> Agent workspace</a>
-      <a class="nav-link" href="graphs.html"><span>◇</span> Graph runtime</a>
-      <a class="nav-link" href="claims.html"><span>▦</span> Sample claims</a>
-      <a class="nav-link" href="#learning"><span>◎</span> Learning memory</a>
+      <nav aria-label="Workspace" data-workspace-nav data-page="agent"></nav>
       <div class="side-spacer"></div>
       <div class="side-note"><span class="pulse" id="serviceDot"></span><span id="serviceLabel">Connecting…</span><br><small>Temporal · Postgres · Hindsight</small></div>
       <div class="side-footer">AUTHORING HARNESS<br><strong>Four tools. Empty starting library.</strong><small>read · bash · edit · write</small></div>
@@ -45,6 +42,7 @@
       </div>
     </main>
   </div>
+  <script type="module" src="src/navigation.mjs"></script>
   <script type="module" src="src/agent.mjs"></script>
 </body>
 </html>

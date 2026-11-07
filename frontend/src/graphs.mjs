@@ -1,5 +1,6 @@
 import { createGraphAPI, escapeHtml as esc, featureColumns, probability, evaluationGates, servingCounters, predictionPreview, graphLayout } from "./graph-client.mjs";
 import { displayStatus, statusClass } from "./agent-client.mjs";
+import { createSyntheticDemoCSV } from "./demo-data.mjs";
 
 const $ = (selector) => document.querySelector(selector);
 const api = createGraphAPI();
@@ -263,6 +264,47 @@ $("#datasetForm").onsubmit = async (event) => {
 };
 
 $("#datasetSelect").onchange = (event) => chooseDataset(event.target.value);
+
+function selectCSVFile(selector, content, name) {
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([content], name, { type: "text/csv" }));
+  $(selector).files = transfer.files;
+}
+
+$("#prepareDemo").onclick = () => {
+  try {
+    const demo = createSyntheticDemoCSV();
+    selectCSVFile("#datasetFile", demo.evaluationCSV, "synthetic-classification.csv");
+    selectCSVFile("#batchFile", demo.inferenceCSV, "synthetic-inference.csv");
+    $("#datasetName").value = "Synthetic classification · 5,000 rows";
+    $("#targetColumn").value = demo.target;
+    $("#positiveLabel").value = demo.positiveLabel;
+    $("#featureColumns").value = demo.featureColumns.join(",");
+    $("#labelMeaning").value = demo.labelMeaning;
+    $("#syntheticDataset").checked = true;
+    $("#labelsVerified").checked = false;
+    $("#minPrecision").value = "0.85";
+    $("#minRecall").value = "0.85";
+    $("#maxFPR").value = "0.15";
+    $("#scoreThreshold").value = "0.50";
+    $("#uploadDetails").open = true;
+    if (!$("#bootstrapPrompt").value.trim()) {
+      $("#bootstrapPrompt").value = "Build a reproducible binary classifier for this synthetic target. Inspect the feature profile and training/development data, then choose an appropriate model from the observed data. Author meaningful separate fit and serving nodes with tunable configuration and focused tests, following graph-authoring.md. Return probabilities, recommended decisions, and understandable reasons. Serving must use ordinary code without LLM calls. Do not attempt promotion.";
+    }
+    status("#demoDataStatus", "Prepared 5,000 synthetic rows and a label-free inference CSV. Review the form, confirm the generated labels, then upload and freeze the dataset.");
+    status("#batchStatus", "Synthetic inference CSV selected: 5,000 rows with signal, context, and noise. Choose an approved demo release to run it.");
+  } catch (error) { status("#demoDataStatus", `Could not prepare demo CSVs: ${errorText(error)}`, true); }
+};
+
+$("#prepareDemoBatch").onclick = () => {
+  try {
+    const demo = createSyntheticDemoCSV();
+    selectCSVFile("#batchFile", demo.inferenceCSV, "synthetic-inference.csv");
+    state.pendingBatch = null;
+    status("#batchStatus", "Synthetic inference CSV selected: 5,000 rows with signal, context, and noise, without labels. Choose an approved demo release, then click Run graph.");
+  } catch (error) { status("#batchStatus", `Could not prepare demo batch: ${errorText(error)}`, true); }
+};
+
 $("#bootstrapForm").onsubmit = async (event) => {
   event.preventDefault(); if (state.submitting.has("bootstrap") || !state.datasetID) return;
   const values = { dataset_id: state.datasetID, task: state.task, prompt: $("#bootstrapPrompt").value.trim(), max_turns: Number($("#bootstrapTurns").value) };

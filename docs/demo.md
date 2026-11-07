@@ -3,6 +3,15 @@
 Run `make demo` and open <http://127.0.0.1:8080/graphs.html>. First startup builds
 the generic numerical environment; `.env` supplies the model and Hindsight.
 
+For a synthetic demonstration, click **Prepare 5,000-row demo** in the evaluation
+dataset panel. It selects a generated labelled CSV, fills the dataset policy and
+an empty authoring prompt, and selects a matching label-free inference CSV.
+Review the generated label meaning and explicitly confirm it before uploading.
+This preparation starts no model call and approves no release. After a page
+reload, **Prepare 5,000-row demo batch** in the batch panel selects the inference
+CSV again. Both files use `signal`, `context`, and `noise`; use an approved graph
+trained for those features. No Python command or manual file creation is needed.
+
 1. Upload a labelled CSV. Declare the target, positive label, meaning, permitted
    features, and precision/recall/false-positive thresholds. Verify label provenance
    externally and mark synthetic data explicitly. Types and train/development/audit

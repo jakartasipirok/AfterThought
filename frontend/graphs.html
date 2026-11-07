@@ -12,9 +12,7 @@
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>DURABLE GRAPH RUNTIME</small></div></div>
       <div class="side-label">WORKSPACE</div>
-      <a class="nav-link" href="./"><span>✦</span> Agent workspace</a>
-      <a class="nav-link active" href="graphs.html"><span>◇</span> Graph runtime</a>
-      <a class="nav-link" href="claims.html"><span>▦</span> Sample claims</a>
+      <nav aria-label="Workspace" data-workspace-nav data-page="graphs"></nav>
       <div class="side-spacer"></div>
       <div class="side-note"><span class="pulse" id="graphServiceDot"></span><span id="graphServiceLabel">Connecting…</span><br><small>Author · evaluate · approve · run</small></div>
       <div class="side-footer">HUMAN CONTROLLED RELEASES<br><strong>Evidence before activation.</strong><small>Batch serving uses graph code, with zero LLM calls.</small></div>
@@ -29,6 +27,7 @@
         <section class="metrics agent-metrics" id="graphMetrics" aria-label="Graph runtime evidence"></section>
         <section class="panel graph-step-panel" id="datasetPanel">
           <div class="section-heading"><div><span class="eyebrow">01 · FREEZE THE EVIDENCE</span><h2>Evaluation dataset</h2><p>Declare verified labels and permitted features before the agent starts.</p></div><span class="step-number">01</span></div>
+          <div class="form-actions"><span class="form-hint">Try the full flow with generated synthetic data. Prepare the CSVs and form, then review and upload.</span><button type="button" class="secondary-button" id="prepareDemo">Prepare 5,000-row demo</button></div><div id="demoDataStatus" class="form-status" role="status"></div>
           <div class="dataset-picker"><label for="datasetSelect">Dataset in this scope<select id="datasetSelect"><option value="">Choose a dataset or upload below</option></select></label><div id="datasetSummary" class="dataset-summary">No dataset selected.</div></div>
           <details class="upload-details" id="uploadDetails" open><summary>Upload a labelled CSV and freeze its evaluation policy</summary>
             <form id="datasetForm" class="dataset-form">
@@ -51,11 +50,14 @@
           <section class="panel graph-step-panel release-detail-panel" id="releasePanel"><div class="section-heading"><div><span class="eyebrow">03 · INSPECT THE CANDIDATE</span><h2 id="releaseHeading">Fit and serve graphs</h2></div><span id="releaseStatus"></span></div><div id="releaseDetail"><div class="welcome-state"><div class="welcome-icon">◇</div><h3>The graph is the reusable work</h3><p>Select a release to inspect its fit and serve nodes, source code, configuration, and measured evaluation reports.</p></div></div></section>
         </div>
         <section class="panel graph-step-panel" id="approvalPanel"><div class="section-heading"><div><span class="eyebrow">04 · HUMAN RELEASE DECISION</span><h2>Approve and activate</h2><p>Only an eligible candidate can be activated. No background process approves a release.</p></div><span class="step-number">04</span></div><div id="approvalTarget" class="approval-target">Select an eligible candidate to review.</div><form id="approvalForm" autocomplete="off"><div class="form-grid"><label>Human approver<input id="approverActor" maxlength="128" autocomplete="name" required></label><label>Host approval code<input id="approvalCode" type="password" autocomplete="off" spellcheck="false" required><small>Read it on the host with <code>bin/afterthought approval-code</code>. The agent cannot access it.</small></label></div><label class="approval-confirm"><input id="approvalConfirmed" type="checkbox" required> I reviewed this candidate, its frozen evaluation policy, and its audit evidence. I explicitly approve activating the release named above.</label><button id="approveReleaseButton" class="primary-button" disabled>Approve and activate selected release</button><div id="approvalStatus" class="form-status" role="status"></div></form></section>
-        <section class="panel graph-step-panel" id="batchPanel"><div class="section-heading"><div><span class="eyebrow">05 · REUSE THE GRAPH</span><h2>Run a batch with zero LLM calls</h2><p>Serve the human approved graph using an input CSV. Inspect actual counters and recommendations.</p></div><span class="step-number">05</span></div><form id="batchForm" class="batch-form"><label>Approved release<select id="batchRelease" required><option value="">No approved release available</option></select></label><label>Input CSV<input id="batchFile" type="file" accept=".csv,text/csv" required></label><button class="primary-button" id="startBatch" disabled>Run graph →</button></form><div class="form-status" id="batchStatus" role="status"></div><div id="batchResult"><p class="empty-state">Rows are processed by isolated graph nodes. Results will include recommended decisions and reasons.</p></div></section>
+        <section class="panel graph-step-panel" id="batchPanel"><div class="section-heading"><div><span class="eyebrow">05 · REUSE THE GRAPH</span><h2>Run a batch with zero LLM calls</h2><p>Serve the human approved graph using an input CSV. Inspect actual counters and recommendations.</p></div><span class="step-number">05</span></div><form id="batchForm" class="batch-form"><label>Approved release<select id="batchRelease" required><option value="">No approved release available</option></select></label><label>Input CSV<input id="batchFile" type="file" accept=".csv,text/csv" required></label><button class="primary-button" id="startBatch" disabled>Run graph →</button></form>
+          <div class="form-actions"><span class="form-hint">For demo graphs using signal, context, and noise. The generated batch contains no target labels.</span><button type="button" class="secondary-button" id="prepareDemoBatch">Prepare 5,000-row demo batch</button></div>
+          <div class="form-status" id="batchStatus" role="status"></div><div id="batchResult"><p class="empty-state">Rows are processed by isolated graph nodes. Results will include recommended decisions and reasons.</p></div></section>
         <p class="source-note">Metrics reflect the selected frozen dataset and observed runs. Synthetic results prove mechanics, not real insurance fraud accuracy. Human investigators retain responsibility for claim outcomes.</p>
       </div>
     </main>
   </div>
+  <script type="module" src="src/navigation.mjs"></script>
   <script type="module" src="src/graphs.mjs"></script>
 </body>
 </html>

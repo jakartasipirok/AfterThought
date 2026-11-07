@@ -255,6 +255,10 @@ $("#feedbackForm").onsubmit = async (event) => {
 
 renderMetrics();
 if (state.selected) state.selection = new AbortController();
-refresh();
+refresh().then(() => {
+  // Session evidence changes the page height after the browser's initial
+  // fragment scroll. Re-align only if memory is still the requested location.
+  if (location.hash === "#learning") $("#learning")?.scrollIntoView({ block: "start" });
+});
 setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });

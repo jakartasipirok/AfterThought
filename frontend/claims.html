@@ -9,12 +9,9 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>CLAIMS INTELLIGENCE</small></div></div>
+      <div class="brand"><div class="brand-mark">A<span>✦</span></div><div><strong>AfterThought</strong><small>DURABLE GRAPH RUNTIME</small></div></div>
       <div class="side-label">WORKSPACE</div>
-      <a class="nav-link" href="./"><span>✦</span> Agent workspace</a>
-      <a class="nav-link" href="graphs.html"><span>◇</span> Graph runtime</a>
-      <a class="nav-link active" href="claims.html"><span>▦</span> Sample claims</a>
-      <a class="nav-link" href="#claim-table"><span>☷</span> Claim queue</a>
+      <nav aria-label="Workspace" data-workspace-nav data-page="claims"></nav>
       <div class="side-spacer"></div>
       <div class="side-note"><span class="pulse"></span> Illustrative replay<br><small>Fictional rules · browser only</small></div>
       <div class="side-footer">RULESET<br><strong>Motor triage v1.0</strong><small>Fictional example · not agent authored</small></div>
@@ -24,6 +21,7 @@
       <div class="content">
         <div class="page-title"><div><div class="eyebrow">MOTOR CLAIM TRIAGE</div><h1>Sample claims replay</h1><p>Explore the supplied UI example, separate from real agent sessions.</p></div><button id="resetButton" class="secondary-button">Reset demo decisions</button></div>
         <div class="notice"><span class="notice-icon">i</span><span><strong>Illustrative replay, not the agent.</strong> Business rules and thresholds are fictional examples. Browser decisions do not enter agent memory. Review flags are not fraud findings, and “Continue” is not payment approval.</span></div>
+        <nav aria-label="On this page"><a class="text-button" href="#claim-table">Jump to claim queue ↓</a></nav>
         <section class="metrics" id="metrics" aria-label="Claim outcomes"></section>
         <section class="panel flow-panel"><div class="section-heading"><div><span class="eyebrow">END-TO-END PROCESS</span><h2>Five-stage claim flow</h2></div><div class="inline-meta">Versioned checks <span>·</span> Evidence at every stage</div></div><div class="flow" id="flow"></div></section>
         <section class="panel queue-panel" id="claim-table"><div class="section-heading queue-heading"><div><span class="eyebrow">WORK QUEUE</span><h2>Motor claims</h2><p>Source records are replayed through the active ruleset.</p></div><span class="record-count" id="recordCount"></span></div><div class="queue-controls"><div class="search-wrap"><span>⌕</span><input id="searchInput" type="search" placeholder="Search claim ID, agent, or vendor" aria-label="Search claims"></div><select id="outcomeFilter" aria-label="Filter by outcome"><option value="All">All outcomes</option><option value="Review">Review</option><option value="Continue">Continue</option><option value="Hold">Hold</option></select><select id="sortOrder" aria-label="Sort claims"><option value="recent">Latest received</option><option value="amount">Highest amount</option></select></div><div class="table-scroll"><table><thead><tr><th>CLAIM ID</th><th>LOSS DATE</th><th>AMOUNT</th><th>SEVERITY</th><th>OUTCOME</th><th>ROUTE</th><th></th></tr></thead><tbody id="claimRows"></tbody></table></div><div class="pagination"><span id="pageSummary"></span><div><button id="prevPage" aria-label="Previous page">‹</button><button id="nextPage" aria-label="Next page">›</button></div></div></section>
@@ -33,6 +31,7 @@
   </div>
   <div id="scrim" class="scrim" hidden></div>
   <aside id="drawer" class="drawer" aria-label="Claim details" aria-hidden="true"></aside>
+  <script type="module" src="src/navigation.mjs"></script>
   <script type="module" src="src/app.mjs"></script>
 </body>
 </html>

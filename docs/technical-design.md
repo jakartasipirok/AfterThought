@@ -4,7 +4,7 @@
 
 AfterThought reduces repeated data-science work by having an agent author an executable graph, evaluate it, retain learning evidence, and propose targeted revisions. The first workload is insurance-fraud screening. Each input row produces a probability, an `accept`, `escalate`, or `reject` recommendation, and reasons for human review.
 
-This document describes the hackathon implementation at commit `4549986`, including automatic robustness review. The architectural decisions below preserve the requested empty initial domain library, four-tool harness, Go/Temporal orchestration, Hindsight memory, and explicit human activation.
+This document describes the current hackathon implementation, including cumulative learning, fixed backtests, policy-aware review, and the frontend demo controllers. The architectural decisions preserve the requested empty initial domain library, four-tool harness, Go/Temporal orchestration, Hindsight memory, and explicit human activation.
 
 The demonstration establishes executable graph reuse, measured evaluation, and controlled robustness improvement. Establishing fraud accuracy requires the team's verified labels, documented target semantics, and a suitable independent evaluation dataset.
 
@@ -15,6 +15,7 @@ The demonstration establishes executable graph reuse, measured evaluation, and c
 | Bootstrap from a CSV | Operator supplies a binary target, positive label, feature selection, label provenance, and evaluation policy. The agent authors fit and serve DAGs from an empty domain library. |
 | Reuse learned computation | An approved graph processes a complete serving CSV through Python nodes. Serving-model calls and input/output tokens remain zero. |
 | Tune individual building blocks | A revision targets `fit:ID` or `serve:ID`. Packaging validates every protected node revision and the graph topology against the parent. |
+| Learn from additional datasets | Compatible training/development partitions accumulate for fit-node tuning. Original development/audit gates stay fixed, and separate backtests measure each version. |
 | Evaluate before activation | Trusted evaluation computes held-out metrics. Eligible revisions also meet the incumbent development F1. Automatic repairs successfully replay their triggering batch. |
 | Retain learning | Source-attributed observations, development measurements, review outcomes, and human decisions enter the durable memory outbox. |
 | Review automatically | An opted-in scope consumes windows of 50 finished batches for its active release. An attributable failure can create a repair; a fresh numerical departure can create a policy proposal. Manual review uses the same gates. |
@@ -75,6 +76,8 @@ Intake requires at least 50 labelled rows and at least 10 rows in each of exactl
 
 The service infers number, boolean, string, and nullable feature values. It retains deterministic, class-stratified splits of approximately 60% training, 20% development, and 20% audit. Dataset identity binds the source and declared evaluation configuration. Authoring receives labelled training/development files and aggregate profile metadata. The supervisor retains audit data outside the author workspace.
 
+An `evaluation_only` dataset places its entire sample in audit storage and cannot be used for bootstrap or feedback. Learning datasets must share the task, target, positive label, synthetic flag, confirmed provenance, feature order, and inferred types. Builds accept up to eight feedback datasets and four backtests. Additional feedback requires a fit-node revision. Learning validation rejects duplicate feature vectors across training/development inputs and overlap with reserved audit rows.
+
 Serving CSVs are checked against the frozen feature contract. The prepared serving artifact contains feature objects and stable row IDs. Labels are omitted from that artifact. Entity-based and chronological split policies are follow-on design work. [Dataset implementation](../internal/dataset/csv.go)
 
 ### Graph manifest
@@ -133,7 +136,7 @@ The approval endpoint validates an explicit decision, a reviewer name, evaluatio
 
 A transaction locks the candidate, serializes channel updates by learning scope, records an approval event, and updates `graph_channels`. Concurrent approvals using a stale expected pointer fail. The key lives in ignored host state outside agent and node mounts. Approval is available to the human-facing API and has no model-tool or Activity registration.
 
-Approval currently uses possession of the host key and a supplied reviewer name. Authenticated operator identity is a prerequisite for a shared deployment. [Approval implementation](../internal/pipeline/store.go)
+The local frontend accepts the operator's explicit click and supplied reviewer name through the same-origin API. Host clients can instead supply the approval key. Authenticated operator identity is a prerequisite for a shared deployment. [Approval implementation](../internal/pipeline/store.go)
 
 ### Serving lifecycle
 
@@ -151,6 +154,19 @@ The packager permits edits to the selected node's source or configuration. It va
 
 The supervisor reruns development and audit evaluation. Development F1 must meet the incumbent value within the implemented numerical tolerance. A newly eligible candidate goes through the same human approval transaction. This supports improvements through inspectable node revisions and measured evidence. [Tuning validation](../internal/execution/graph.go) · [Authoring preparation](../internal/pipeline/authoring.go)
 
+### Repeated-learning lifecycle
+
+1. The frontend uploads an initial dataset, three supplemental datasets, and one evaluation-only benchmark from the local prepared bundle.
+2. The initial build pins `backtest_dataset_ids` and authors a graph with one fit node and at least two serving nodes. Guided learning requests a 24-turn authoring budget.
+3. Each next round tunes the preceding candidate's fit node and carries cumulative `feedback_dataset_ids`. Prior feedback IDs must remain present. The supervisor stages merged `data/train.json`, `data/development.json`, `data/original-development.json`, and `learning.json` provenance.
+4. The actual fit graph retrains on cumulative training rows. The frozen serving graph is evaluated against original development/audit data and each retained backtest's audit partition.
+5. Original development/audit gates determine eligibility, including development-F1 nonregression against the parent. Backtest reports supply comparative measurements. A completed rejected candidate can be tuned again; a terminal failed build stops the guided sequence.
+6. The operator inspects each version and explicitly approves an eligible candidate for serving.
+
+The supplied bundle starts with 400 cases, split into 240 training, 80 development, and 80 audit rows. Cumulative training grows to 600, 716, and 800. The separate benchmark contains 560 cases with equal fraud/legitimate labels. The main chart uses benchmark accuracy; **Original audit accuracy** uses the same 80 original audit cases in every round. Additional audit partitions remain withheld from learning. Preparation fixes the data sequence, while actual model authoring and graph execution produce the revisions and scores.
+
+Benchmark labels/results and original audit evidence remain outside the authoring workspace and improvement memory. Recorded development measurements can guide later work. Repeated operator selection using benchmark results consumes its independence. [Learning data validation](../internal/dataset/learning.go) · [Frontend controller](../frontend/src/learning-demo.mjs)
+
 ## 8. Automatic robustness review
 
 ### Trigger policy
@@ -158,6 +174,8 @@ The supervisor reruns development and audit evaluation. Development F1 must meet
 Auto-review is opt-in per learning scope. A transition from disabled to enabled starts a fresh sequence baseline. Repeating `enabled=true` preserves the counter. One admitted serving CSV contributes one finished batch when it completes or fails. Activity retries retain the same batch identity.
 
 The worker maintenance loop checks approximately every 15 seconds. A transaction acquires a task advisory lock, selects the next 50 signals for the active release after the cursor, and consumes that window once. The same lock coordinates signal insertion and window consumption, preventing a late commit from falling behind the consumed cursor.
+
+Training, evaluation, and benchmark backtests do not create these serving-batch signals. The prepared repeated-learning sequence can run before activation. **Review now** claims 1–50 available serving signals with the same cooldown and pending-proposal checks. The guided policy demo uses this immediate-review path after its two demonstration batches.
 
 Signals include row count, missing-value counts, a fixed failure kind, an attributable node ID, and aggregate numerical departures from frozen training ranges. A failed graph's retained progress query supplies the failed node when its child result is unavailable. Invalid final predictions identify the serving output node. Aggregate diagnostics feed the review prompt while the triggering input stays in supervisor storage.
 
@@ -207,8 +225,8 @@ At a sustained completion rate of `r` batches per minute, the collection time is
 | Record | Durable content and identity |
 | --- | --- |
 | `agent_datasets` | Immutable metadata, feature contract, policy and split references |
-| `graph_builds` | Build request ID, input digest, phase, author session and candidate reference |
-| `graph_releases` | Graph, fitted artifact, parent, changed node, evaluation and approval metadata |
+| `graph_builds` | Build request ID, input digest, phase, author session, candidate, feedback and backtest IDs |
+| `graph_releases` | Graph, fitted artifact, parent, changed node, original evaluations, backtest reports, feedback IDs and approval metadata |
 | `graph_channels` | Current release pointer per scope |
 | `graph_approvals` | Reviewer, selected release, previous release and timestamp |
 | `graph_batches` | Request identity, pinned release/input, output, trace and zero-model counters |
@@ -236,9 +254,11 @@ The cost model includes initial authoring, repair authoring, memory extraction/e
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /api/learning-demo` | Read the prepared local learning bundle; returns 404 when missing |
 | `POST /api/datasets` | Upload CSV plus dataset options as multipart data |
 | `GET /api/datasets` and `GET /api/datasets/{id}` | List and inspect frozen datasets |
 | `POST /api/bootstraps` | Admit an authoring/evaluation request with stable ID |
+| `GET /api/bootstraps?task=...` | Restore build history for a learning scope |
 | `GET /api/bootstraps/{id}` | Inspect build phase, error, session and release |
 | `GET /api/releases` and `GET /api/releases/{id}` | Inspect candidates and the active pointer |
 | `GET /api/releases/{id}/nodes/{phase}/{node}` | Inspect pinned node source and configuration |
@@ -257,6 +277,10 @@ The cost model includes initial authoring, repair authoring, memory extraction/e
 | `POST /api/policy-proposals/{id}/decision` | Record human approval or dismissal |
 
 The Graph Runtime page presents dataset intake, bootstrap jobs, versioned DAGs, node inspection, evaluation, approval, batch results, and automatic review. The candidate inspection action opens replay evidence and before/after F1. The existing approval form performs activation.
+
+The guided page offers **Repeated learning · your claims CSVs** and **Policy review · synthetic claims**. **Demo options → Show technical workspace** exposes manual controls. Repeated learning presents selectable version bars, metrics, a full results table, the recorded public explanation, model/tool activity, and changed-node source/configuration. Activity DTOs exclude system/developer messages and opaque provider reasoning items.
+
+Browser progress stores stable task/build identities. Polling runs about every 3.5 seconds while visible. Refresh restores state; learning task URLs also support reconstruction from retained jobs and datasets. Temporal runs admitted jobs while the page is closed. The browser submits subsequent guided steps when it resumes. Starting another demo retains earlier server evidence in its previous scope.
 
 The API uses same-origin browser access and loopback host restrictions. JSON mutations enforce bounded strict decoding. CSV endpoints use bounded multipart uploads. Read responses expose operation state so clients can retry asynchronous admission using stable IDs. [HTTP implementation](../internal/webapi/pipeline.go) · [Graph UI](../frontend/src/graphs.mjs)
 
@@ -322,4 +346,4 @@ Runtime failures with an attributable node take priority and retain the existing
 
 A policy review uses the existing durable agent and Hindsight recall, up to 12 turns, to produce `policy-proposal.json`. Collection validates bounded fields, exact whitespace-normalized page quotations, and observed evidence IDs. The UI separates the hypothesis, alternative explanations, and proposed investigator procedure. Model text is not verified truth.
 
-Approval or dismissal requires a human identity, host key, explicit confirmation and note. Publishing checks the current policy ID, appends the amendment, and records attributed feedback in the memory outbox. Policy publication never activates a graph. Reviewed dataset/feature/direction signatures are suppressed for the current policy version; this coarse demo heuristic does not recognize every future variant of a scam. No statistical-accuracy improvement is claimed without fresh verified labels.
+Approval or dismissal requires a reviewer identity, explicit confirmation, assessment, and note. The frontend uses a same-origin operator click; keyed host clients remain supported. Publishing checks the current policy ID, appends the amendment, and records attributed feedback in the memory outbox. In the guided policy demo, the browser subsequently requests a serving-output-node revision. Evaluation and a separate human graph approval precede activation. Reviewed dataset/feature/direction signatures are suppressed for the current policy version. Statistical-accuracy claims require verified labels and suitable evaluation.

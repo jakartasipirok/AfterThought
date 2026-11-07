@@ -1,8 +1,8 @@
-# AfterThought
+# Illustrative claims replay
 
 **Check the claim. Route exceptions. Close the loop.**
 
-AfterThought is a hackathon prototype for motor-claim exception handling. It replays structured claim records through a deterministic, versioned workflow. Routine claims use **zero LLM calls**. The demo shows how a claim is screened, checked against business rules, routed, reviewed by a person when needed, and given a recorded next action.
+The browser replay at `/claims.html` uses fixed fictional rules to demonstrate motor-claim exception handling. Routine claims use **zero LLM calls**. It shows screening, business checks, routing, human review, and a recorded next action. The agent-authored graph and repeated-learning demos run at `/graphs.html`; see the [project README](../README.md).
 
 ## End-to-end overview
 
@@ -39,7 +39,7 @@ From the repository root:
 python3 -m http.server 8000 -d frontend
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Click a claim to inspect its five-stage trace. On a Review claim, add an investigation note and choose a disposition. Use **Simulate reference outage** to inspect Hold and recovery. Demo decisions are stored only in your browser; **Reset demo decisions** clears them.
+Open [http://localhost:8000/claims.html](http://localhost:8000/claims.html). Alternatively, with `make demo` running, open <http://127.0.0.1:8080/claims.html>. Click a claim to inspect its five-stage trace. On a Review claim, add an investigation note and choose a disposition. Use **Simulate reference outage** to inspect Hold and recovery. Demo decisions are stored only in your browser; **Reset demo decisions** clears them. The static Python server supports this replay; the graph demos use the Go server and its API.
 
 Run the workflow tests:
 
@@ -54,7 +54,8 @@ AfterThought/
 ├── AGENTS.md                 # Coding-agent entry point
 ├── README.md                 # Product and workflow overview
 ├── frontend/
-│   ├── index.html
+│   ├── claims.html          # Replay entry point
+│   ├── graphs.html          # Agent-authored graph workspace
 │   ├── src/                  # UI and deterministic workflow engine
 │   └── data/                 # PII-free motor claims and ID references
 ├── scripts/prepare_data.py  # Rebuild the frontend extract

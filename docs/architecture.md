@@ -18,9 +18,19 @@ Dataset intake freezes operator-declared binary labels, selected features, infer
 
 Tuning pins a parent release and selected `fit:ID` or `serve:ID`. The supervisor rejects edits outside that node's source/config, preserving every other revision and the graph topology. Serving edits reuse the fitted artifact; fit edits retrain. The whole graph is reevaluated, and development F1 regressions fail eligibility. Only development evidence enters improvement memory. Internal child/session IDs use an API-reserved namespace, and author sessions bind their full input digest.
 
+## Cumulative learning and backtests
+
+The repeated-learning controller requests an initial build followed by three revisions of one fit node. Each revision carries cumulative `feedback_dataset_ids`; the supervisor combines only compatible training/development partitions and retrains using the expanded training artifact. Original development/audit evaluation stays fixed. Validation rejects overlapping learning and reserved feature vectors. Evaluation-only datasets keep all rows in audit storage and cannot train a graph.
+
+`backtest_dataset_ids` pin additional evaluation datasets. The supervisor executes the candidate against their reserved inputs and retains reports on the release. Benchmark labels and results stay outside authoring and memory. Candidate eligibility depends on original development/audit gates and development F1 against the parent. Completed rejected candidates remain available for further tuning.
+
+In the prepared demo, the original 400 claims split into 240 training, 80 development, and 80 audit cases. The chart uses a separate balanced 560-case benchmark. **Original audit accuracy** checks the same original 80 cases after each revision. See [dataset notes](dataset-notes.md) for sampling and provenance.
+
 ## Automatic robustness review
 
 Opted-in scopes review windows of 50 finished serving batches for the active release. The worker records aggregate signals and claims review windows under a task lock. Attributable failures can start a bounded, one-node repair workflow with frozen evaluation and a trusted replay of the triggering batch. Each candidate requires human approval. Review outcomes and approvals enter the attributed memory outbox. See the [Technical Design Document](technical-design.md) for cadence, limits, recovery, and state transitions.
+
+Training, development/audit execution, and backtests do not increment serving-batch counters. The worker checks about every 15 seconds. **Review now** can claim 1–50 available signals through the same cooldown and pending-review guards. Fresh numerical departures can take the policy-review path below; healthy windows retain an observation.
 
 ## Human-only activation
 
@@ -68,6 +78,10 @@ The current milestone supports local binary CSV intake, packaging, fit/serve exe
 Company-policy PDFs are versioned task knowledge. A lightweight training-range detector records aggregate novelty at batch completion. Reviews distinguish attributable runtime failures (one-node repair) from emerging-pattern hypotheses (cited policy proposal). The latter uses a separate Temporal workflow and existing four-tool agent, with Hindsight context. Both paths remain human controlled: a policy amendment publishes knowledge only; graph activation still requires evaluation and a separate human activation decision. See the README’s quick policy-learning demo.
 
 
-### Frontend learning story
+### Frontend demo controllers
 
 The Graph Runtime page offers a guided synthetic demo with dataset/policy cards, the serving DAG, and an evidence timeline. It uploads inputs and submits durable jobs with stable IDs, waits for human activation, runs two batches, and requests policy review. After the human publishes an amendment, the browser submits a one-node serving-output revision using the existing tuning API. Frozen evaluation and node-boundary checks apply. Human activation of the revision triggers the same emerging batch and a before/after recommendation comparison. The browser stores only progress metadata and resumes handoffs while the page is open. The 50-batch worker cadence operates independently.
+
+The repeated-learning mode loads a prepared local bundle through `GET /api/learning-demo`, uploads five datasets, and submits four builds with stable round IDs. It advances after each completed evaluation, including failed gates, but stops on a failed build. Approval remains a separate operator action. Its chart, metric cards, public agent explanation, recorded model/tool activity, and source/config comparisons derive from retained jobs and releases.
+
+The visible page polls every 3.5 seconds. Refresh restores browser progress, and a learning task URL can reconstruct the run from server jobs/datasets while its prepared bundle remains available. Admitted Temporal jobs continue independently of the page; subsequent browser-controlled handoffs require it to resume. **Start another demo** clears the selected browser progress and creates a new scope while retaining server evidence.

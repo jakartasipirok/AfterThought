@@ -2,6 +2,14 @@
 
 Fictional hackathon reference, version 1. Public guidance was reviewed on 7 November 2026.
 
+## Use in the frontend
+
+Choose **Policy review · synthetic claims** on `/graphs.html`. **Start demo** uploads the bundled [policy PDF](../frontend/assets/demo-company-policy.pdf) and generated data. The runtime pins the uploaded document for authoring and stores later amendments as new versions. This Markdown describes the reference policy; editing it alone does not replace the bundled PDF or an uploaded version.
+
+For your own knowledge, use the technical workspace to upload a searchable PDF with Poppler installed. Upload limits are 8 MiB and 30 pages. Review proposals expose cited passages, observed signals, the proposed procedure, and alternative explanations. Enter your assessment, note, and reviewer identity, then choose **Approve policy amendment** or **Dismiss proposal** directly in the frontend.
+
+In the guided demo, approval of an amendment leads the browser to request a serving-output-node revision. Review its source and evaluation, then separately click **Approve and activate**. See the [presenter walkthrough](demo-90-seconds.md#prepare-the-policy-walkthrough). Repeated learning with the supplied claims files has its own data-and-fit-node flow.
+
 ## Purpose and authority
 
 This fictional AfterThought company policy supports a hackathon demonstration using synthetic claims. Human investigators decide claim outcomes and approve changes to this policy. Numerical screening signals initiate evidence review.

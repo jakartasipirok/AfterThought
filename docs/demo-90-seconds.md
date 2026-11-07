@@ -1,8 +1,22 @@
 # The 60–90 second AfterThought demo
 
-Use the **Graph Runtime** page for the whole demonstration. The three visible sections connect the inputs, graph evolution, and measured results.
+Use the **Graph Runtime** page for the whole demonstration. Choose the repeated-learning walkthrough to show measured accuracy over four versions, or the policy walkthrough to show company knowledge and human-reviewed amendments. Prepare the chosen run before presenting.
 
-## Prepare in the frontend
+## Repeated learning walkthrough
+
+Follow [data preparation and startup](demo-learning-rounds.md), choose **Repeated learning · your claims CSVs**, and click **Start demo**. Keep the page open until four versions have results. Inspect their gates and choose the version you will present. Model authoring can take several minutes per round.
+
+| Time | On screen | Say |
+| --- | --- | --- |
+| 0–15 s | Dataset details and chart | “We started with 400 labelled claims and reserved 560 separate cases to compare every version.” |
+| 15–30 s | Click the initial and later chart bars | “The agent learned from additional examples over three rounds. These are the measured results of this completed run.” State the visible starting and ending accuracy. |
+| 30–50 s | Why this version changed; changed training node | “Here is the agent's explanation, its actual tool activity, and the code and configuration it changed in this training node.” |
+| 50–65 s | Fraud caught, legitimate claims flagged, original audit | “We check fraud caught and false alarms together. We also retest the same 80 cases from the initial dataset.” |
+| 65–90 s | Eligible version and Approve and activate | “I choose whether this version goes live. Once approved, its serving graph processes batches with zero serving-model calls.” Click approval only after reviewing the candidate. |
+
+Use the run's visible values. Explain any failed gate or regression shown in the chart. The initial audit and the benchmark measure different reserved datasets. Showing an already completed experiment lets you inspect all four versions within the presentation window.
+
+## Prepare the policy walkthrough
 
 Start the local server with `make demo` and open <http://127.0.0.1:8080/graphs.html>. If an older server is running, stop it with Ctrl+C first. PDF extraction requires Poppler. Allow time for model authoring and evaluation before presenting.
 
@@ -15,7 +29,7 @@ Start the local server with `make demo` and open <http://127.0.0.1:8080/graphs.h
 
 The demo uses generated labels based on repair-estimate ratio. The emerging batch increases evidence reuse from 0–2 to 8–12. A policy-driven revision can improve investigation reasons while retaining classification metrics. Use the displayed measurements when describing results.
 
-## Spoken walkthrough
+## Policy walkthrough narration
 
 | Time | On screen | Say |
 | --- | --- | --- |
@@ -35,6 +49,8 @@ Rehearse the final batch once to measure its runtime. For a strict one-minute pr
 - **Start another demo** creates a fresh scope. Existing server evidence remains available.
 - The guided cycle requests review after its two demonstration batches. Scheduled Auto-review continues to use 50 completed batches.
 
+For repeated learning, enabling Auto-review starts counting serving batches after an approved graph exists. Its four-version experiment uses training and backtests, which do not increment that counter. For a live review demonstration, use the prepared policy flow or submit serving evidence and select **Review now**. Cooldown, pending-proposal checks, and actionable-signal requirements still apply.
+
 ## Six-minute presentation
 
-Spend 45 seconds on the data-science bottleneck, 45 seconds on the build/serve/improve cycle, 75 seconds on this demo, 60 seconds on Temporal and Hindsight, 45 seconds on measured results, and 30 seconds on the next milestone. Reserve the remaining minute for transitions and questions.
+Spend 45 seconds on the data-science bottleneck, 45 seconds on the build/serve/improve cycle, 75 seconds on the chosen demo, 60 seconds on Temporal and Hindsight, 45 seconds on measured results, and 30 seconds on the next milestone. Reserve the remaining minute for transitions and questions.

@@ -8,7 +8,7 @@ The trusted supervisor snapshots node packages, trains on a frozen split, evalua
 
 ## Run locally
 
-Requires Go 1.25+, Docker with Docker Compose, and `make`. Node.js 20+ is needed only to run the frontend tests; the UI needs no install or build step. Start Docker Desktop, or run `colima start` if using Colima.
+Requires Go 1.25+, Docker with Docker Compose, and `make`. Node.js 20+ runs tests and prepares the supplied-CSV learning demo. The UI is served directly from `frontend/`. PDF uploads require Poppler (`brew install poppler` on macOS). Start Docker Desktop, or run `colima start` if using Colima.
 
 From the repository root, create the local configuration without overwriting an existing `.env`:
 
@@ -31,7 +31,9 @@ Press **Ctrl+C** to stop the UI and worker. Run `make down` to stop the supporti
 
 Service dashboards: Temporal at <http://127.0.0.1:8233> and Hindsight at <http://127.0.0.1:9999>.
 
-See the [demo walkthrough](docs/demo.md) for a presentation sequence. The [Technical Design Document](docs/technical-design.md) covers architecture, contracts, recovery, automatic review, and design limitations.
+For a presentation, use the [60–90 second script](docs/demo-90-seconds.md). The [manual walkthrough](docs/demo.md) covers your own CSVs, and the [Technical Design Document](docs/technical-design.md) covers contracts, recovery, review, and limitations.
+
+## Build and run your own graph
 
 1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
 2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
@@ -49,11 +51,30 @@ This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, e
 
 ## Frontend learning demo
 
-Choose **Repeated learning · your claims CSVs** for three cumulative learning rounds and a fixed accuracy benchmark. The [repeated-learning guide](docs/demo-learning-rounds.md) covers preparing the three local CSVs, starting/repeating entirely in the frontend, interpreting the measurements, and human activation.
+### Repeated learning with supplied claims
 
-Choose **Policy review · synthetic claims** for the policy-amendment demonstration below.
+Prepare the local data bundle once with the three supplied files:
 
-Open **Graph Runtime**, enter your name, and click **Start demo**. The page tells the story through **Dataset & knowledge**, **Workflow**, and **Learning & results**. The [60–90 second presenter script](docs/demo-90-seconds.md) includes preparation and narration.
+```sh
+node scripts/prepare_learning_demo.mjs \
+  ~/Downloads/fraud_oracle.csv \
+  ~/Downloads/new_fraud_only.csv \
+  ~/Downloads/novel_pattern_fraud_only.csv
+```
+
+This writes ignored `.afterthought/learning-demo.json`. With the server running, open **Graph Runtime**, choose **Repeated learning · your claims CSVs**, enter your name, and click **Start demo**. Keep the page open while it authors the initial graph and three fit-node revisions. Each round adds labelled examples, retrains, and evaluates the graph. Authoring can take several minutes per round.
+
+The chart uses recorded results on the same **560-case benchmark**, balanced between fraud and legitimate labels. Click a version to inspect its metrics, **Why this version changed**, **Model responses and tool activity**, and **Inspect the changed training node**. Expand **Full evaluation results** for all versions and gate failures.
+
+**Original audit accuracy** means accuracy on the same **80 test cases reserved from the initial 400 claims**. The other 320 initial cases comprise 240 training and 80 development rows. Additional rounds contribute separate training/development data. For example, 60 correct original test cases gives 75% original audit accuracy, while 435 correct benchmark cases gives 77.7% benchmark accuracy. These examples explain the calculation; each run displays its own measured results.
+
+The sample sizes, round sequence, and data preparation are predefined. The model authors the graph and revisions, and the backend executes them to measure performance. Scores can rise or fall. A failed gate blocks activation, while a completed evaluated candidate can still be the parent for the next learning round. Select an eligible version and click **Approve and activate** to use it for serving.
+
+Refresh preserves saved progress. The visible page polls about every 3.5 seconds and advances between rounds. An admitted Temporal job continues while the browser is closed; further browser-driven handoffs resume when the page is reopened. Use **Demo options → Start another demo** for a new scope while retaining existing evidence. See the [repeated-learning guide](docs/demo-learning-rounds.md) for data splits, recovery, and metric definitions.
+
+### Policy review with synthetic claims
+
+Choose **Policy review · synthetic claims**, enter your name, and click **Start demo**. The page presents **Dataset & knowledge**, **Workflow**, and **Learning & results**.
 
 PDF extraction needs Poppler (`brew install poppler` on macOS or `apt-get install poppler-utils` on Debian). Start the server with `make demo`. After backend changes, stop the previous server with Ctrl+C and run it again.
 
@@ -72,7 +93,9 @@ The sample is synthesized from public NICB, Allianz, and Texas Department of Ins
 
 ## Automatic review every 50 batches
 
-In **Graph Runtime**, enable **Auto-review** for the current learning scope after approving its initial graph. Enabling starts a fresh counter. One uploaded serving CSV is one batch, whether it contains 10 rows or 5,000. Completed and failed attempts count once per request ID. Each active release has its own count.
+In **Graph Runtime**, enable **Auto-review** for the current learning scope after approving a graph. Enabling starts a fresh counter. One uploaded serving CSV is one batch, whether it contains 10 rows or 5,000. Completed and failed attempts count once per request ID. Each active release has its own count.
+
+Training, development evaluation, and benchmark backtests in the repeated-learning demo do not add to this counter. Its three revision rounds are driven by the browser's prepared learning sequence. Scheduled Auto-review examines serving evidence after activation.
 
 The worker checks every 15 seconds and consumes windows of 50 finished batches. At one batch per minute, a window takes about 50 minutes. At five batches per minute, it takes about 10 minutes. The panel shows progress and an estimate from observed completion intervals. Cooldown and pending proposals can delay the next review.
 
@@ -83,6 +106,8 @@ The worker checks every 15 seconds and consumes windows of 50 finished batches. 
 - Candidates undergo frozen development/audit evaluation and a trusted replay of the failed batch. Development F1 must meet the incumbent's result.
 - **Improvement ready for review** opens the changed node, before/after replay, and evaluation results. Use **Approve and activate** with your reviewer identity to activate it.
 - Review triggers, outcomes, and attributed approvals enter the durable memory outbox. Disabling Auto-review stops future reviews. A repair already running may finish for human inspection.
+
+**Review now** examines 1–50 available finished batches through the same cooldown and pending-proposal checks. A proposal needs an actionable signal. A numerical range departure supports investigation, and a human assesses whether it suggests a scam, a benign change, or more evidence gathering.
 
 For a controlled demo, use synthetic labelled data and an allowed missing value that causes an authored node to fail. A successful repair demonstrates robustness on that case. Fraud-accuracy improvements require verified labels and suitable independent evaluation.
 
@@ -164,10 +189,23 @@ make test
 make integration
 ```
 
-Integration tests require the services and sandbox image. They use mock model/Hindsight endpoints where appropriate, plus real Docker, Postgres, and Temporal. Coverage includes four-tool visibility, lazy skills, workspace escapes, credential isolation, output limits/timeouts, tool-call journaling, turn budgets, and cross-session memory attribution.
+Integration tests require the services and runtime images (`make up`, `docker pull python:3.12-bookworm`, and `make graph-runtime`). They use mock model/Hindsight endpoints where appropriate, plus real Docker, Postgres, and Temporal. Coverage includes four-tool visibility, workspace boundaries, cumulative learning, held-out evaluation, approval, serving, review, recovery, and memory attribution.
 
 The agent's Bash receives only the workspace and read-only skills. The Docker socket, host files, and provider credentials are excluded. Resource/time limits and an expired-container reaper bound work while the worker runs. Docker is a local demo boundary, not a production claim for arbitrary hostile code.
 
 `bin/afterthought validate --graph graph.json` remains a structural validator for legacy v1 manifests. Executable CSV candidates use v2 `candidate.json` with fit/serve DAGs and are packaged/evaluated through the graph runtime UI/API. A plain `graph.proposal.json` remains an unresolved authoring artifact and cannot be served.
 
 `make down` retains volumes. Preserve `.afterthought/` and the Postgres, Temporal, and Hindsight volumes. See [architecture](docs/architecture.md) and [dataset notes](docs/dataset-notes.md).
+
+## Documentation
+
+| Guide | Use it for |
+| --- | --- |
+| [Presenter script](docs/demo-90-seconds.md) | A prepared 60–90 second demo within a six-minute talk |
+| [Repeated learning](docs/demo-learning-rounds.md) | CSV preparation, rounds, metrics, explanations, refresh, and replay |
+| [Manual graph walkthrough](docs/demo.md) | Bootstrap and tune a graph using your own CSV |
+| [Dataset notes](docs/dataset-notes.md) | Source labels, sampling, feature exclusions, and evaluation limits |
+| [Demo company policy](docs/demo-policy.md) | Fictional PDF policy and public source references |
+| [Architecture](docs/architecture.md) and [technical design](docs/technical-design.md) | Components, APIs, durable state, and execution contracts |
+| [Claims replay](docs/claims-replay.md) | The separate illustrative browser workflow at `/claims.html` |
+| [Contributor guide](AGENTS.md) | Repository layout, commands, conventions, and invariants |

@@ -1,11 +1,19 @@
-# CSV-to-graph demo
+# Manual CSV-to-graph walkthrough
 
 For a short hackathon presentation, follow the [60–90 second script](demo-90-seconds.md), using the frontend learning view and timed narration.
+
+For the supplied historical/new/novel-pattern files, follow [repeated learning](demo-learning-rounds.md). That mode prepares an initial graph and three fit-node revisions automatically. This guide covers manual intake and tuning for a compatible CSV of your choice.
 
 Run `make demo` and open <http://127.0.0.1:8080/graphs.html>. First startup builds
 the generic numerical environment; `.env` supplies the model and Hindsight.
 
 For the manual workspace, open **Demo options → Show technical workspace**.
+CSV files need a header, a declared binary target, at least 50 labelled rows,
+and at least 10 examples of each class. Select the permitted features and positive
+label explicitly. The service supports up to 64 MiB, 100,000 rows, 128 source
+columns, and 64 selected features. Feature names and inferred types become the
+contract for subsequent batches. Later learning datasets must match that contract.
+
 For a synthetic demonstration, click **Prepare 5,000-row demo** in the evaluation
 dataset panel. It selects a generated labelled CSV, fills the dataset policy and
 an empty authoring prompt, and selects a matching label-free inference CSV.
@@ -45,7 +53,26 @@ obtain fresh final audit data and use entity/time splits where appropriate.
 Predictions are recommendations, not settlement actions.
 
 The general agent workspace remains at `/`; the fictional claims replay remains
-at `/claims.html`. Its browser decisions and rules do not seed live graph nodes.
+at `/claims.html`. See [claims replay](claims-replay.md) for its fixed browser rules.
+
+## Review and inspect later changes
+
+Enable **Auto-review** after activating a graph. Each completed or failed serving
+CSV counts as one batch. The worker checks every 15 seconds and reviews windows
+of 50. At five completed batches per minute, collection takes about ten minutes.
+Training and evaluation runs do not contribute to that counter. **Review now**
+can consume available evidence earlier, subject to cooldown and pending proposals.
+
+An attributable failure can trigger a one-node repair and replay of its failing
+input. A fresh numeric range departure can trigger a cited policy proposal when
+company knowledge is available. Healthy windows record an observation. Inspect
+the evidence and results, then approve an eligible graph through the frontend.
+For searchable PDF knowledge and policy decisions, see [demo policy](demo-policy.md).
+
+The page refreshes visible state automatically. Browser refresh preserves saved
+guided progress; durable submitted jobs continue in Temporal. Keep the page open
+for the guided controller to submit its next step. Use **Start another demo** to
+create a fresh scope while retaining previous jobs and measurements.
 
 `make test` runs Go and browser-module checks. `make integration` uses real Docker,
 Postgres, and Temporal with mock providers, covering 5,000-row serving, private

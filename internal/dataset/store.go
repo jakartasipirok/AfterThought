@@ -150,9 +150,16 @@ func (s *Store) Inputs(ctx context.Context, id, split string, withLabels bool) (
 }
 
 func (s *Store) StageTraining(ctx context.Context, id, workspace string) error {
+	return s.StageLearning(ctx, id, nil, workspace)
+}
+
+func (s *Store) StageLearning(ctx context.Context, id string, feedback []string, workspace string) error {
 	dataset, err := s.Get(ctx, id)
 	if err != nil {
 		return err
+	}
+	if dataset.EvaluationOnly {
+		return fmt.Errorf("evaluation-only datasets cannot enter authoring")
 	}
 	if err = os.MkdirAll(workspace, 0700); err != nil {
 		return err
@@ -169,12 +176,45 @@ func (s *Store) StageTraining(ctx context.Context, id, workspace string) error {
 		if err = ctx.Err(); err != nil {
 			return err
 		}
-		data, err := s.Files.Get(dataset.Splits[name].Labeled)
+		ref, err := s.LearningInput(ctx, id, feedback, name)
+		if err != nil {
+			return err
+		}
+		data, err := s.Files.Get(ref)
 		if err != nil {
 			return err
 		}
 		if err = stageFile(root, "data/"+name+".json", data); err != nil {
 			return err
+		}
+	}
+	if len(feedback) > 0 {
+		original, e := s.Files.Get(dataset.Splits["development"].Labeled)
+		if e != nil {
+			return e
+		}
+		if e = stageFile(root, "data/original-development.json", original); e != nil {
+			return e
+		}
+		counts := map[string]int{}
+		for _, split := range []string{"train", "development"} {
+			ref, e := s.LearningInput(ctx, id, feedback, split)
+			if e != nil {
+				return e
+			}
+			b, e := s.Files.Get(ref)
+			if e != nil {
+				return e
+			}
+			var data Data
+			if e = decodeArtifact(b, &data); e != nil {
+				return e
+			}
+			counts[split] = len(data.Rows)
+		}
+		note, _ := json.Marshal(map[string]any{"original_dataset": id, "additional_datasets": feedback, "cumulative_rows": counts, "note": "data/train.json and data/development.json contain cumulative split data. profile.json describes the original dataset. data/original-development.json retains original development examples. Every audit split remains withheld."})
+		if e = stageFile(root, "learning.json", note); e != nil {
+			return e
 		}
 	}
 	profile, err := json.MarshalIndent(dataset.Profile, "", "  ")

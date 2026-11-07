@@ -49,6 +49,10 @@ This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, e
 
 ## Frontend learning demo
 
+Choose **Repeated learning · your claims CSVs** for three cumulative learning rounds and a fixed accuracy benchmark. The [repeated-learning guide](docs/demo-learning-rounds.md) covers preparing the three local CSVs, starting/repeating entirely in the frontend, interpreting the measurements, and human activation.
+
+Choose **Policy review · synthetic claims** for the policy-amendment demonstration below.
+
 Open **Graph Runtime**, enter your name, and click **Start demo**. The page tells the story through **Dataset & knowledge**, **Workflow**, and **Learning & results**. The [60–90 second presenter script](docs/demo-90-seconds.md) includes preparation and narration.
 
 PDF extraction needs Poppler (`brew install poppler` on macOS or `apt-get install poppler-utils` on Debian). Start the server with `make demo`. After backend changes, stop the previous server with Ctrl+C and run it again.

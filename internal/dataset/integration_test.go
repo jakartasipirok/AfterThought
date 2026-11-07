@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/csv"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -212,4 +214,79 @@ func TestIntegrationFrozen5000RowCSVAndTrustedEvaluation(t *testing.T) {
 	if _, _, err = store.InferenceInput(ctx, dataset.ID, strings.NewReader("signal,category,flag\nnot-a-number,category-1,true\n")); err == nil {
 		t.Fatal("later batch silently changed a frozen feature type")
 	}
+	// A benchmark can reserve every row; those rows must never be staged for learning.
+	reservedOptions := fixtureOptions()
+	reservedOptions.Name = "Reserved benchmark"
+	reservedOptions.EvaluationOnly = true
+	reserved, err := store.Create(ctx, bytes.NewReader(raw), reservedOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reserved.Splits["audit"].Rows != 5000 || reserved.Splits["train"].Rows != 0 {
+		t.Fatal("benchmark did not reserve all rows")
+	}
+	if err = store.StageTraining(ctx, reserved.ID, t.TempDir()); err == nil {
+		t.Fatal("benchmark staged for authoring")
+	}
+	if err = store.ValidateLearning(ctx, dataset.ID, nil, []string{reserved.ID}); err == nil {
+		t.Fatal("overlapping benchmark was accepted")
+	}
+	if _, err = store.LearningInput(ctx, dataset.ID, []string{reserved.ID}, "train"); err == nil {
+		t.Fatal("reserved data entered cumulative training")
+	}
+	// The earlier fixture deliberately repeats feature vectors. Learning inputs
+	// require disjoint feature vectors, so give this section unique signals.
+	records, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < len(records); i++ {
+		records[i][0] = strconv.Itoa(i)
+	}
+	var unique bytes.Buffer
+	writer := csv.NewWriter(&unique)
+	if err = writer.WriteAll(records); err != nil {
+		t.Fatal(err)
+	}
+	raw = unique.Bytes()
+	dataset, err = store.Create(ctx, bytes.NewReader(raw), fixtureOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Change selected feature values, leaving the same schema and label semantics.
+	freshRaw := bytes.ReplaceAll(raw, []byte("category-"), []byte("fresh-category-"))
+	feedbackOptions := fixtureOptions()
+	feedbackOptions.Name = "New verified examples"
+	feedback, err := store.Create(ctx, bytes.NewReader(freshRaw), feedbackOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.ValidateLearning(ctx, dataset.ID, []string{feedback.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	learningWorkspace := t.TempDir()
+	if err = store.StageLearning(ctx, dataset.ID, []string{feedback.ID}, learningWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.StageLearning(ctx, dataset.ID, []string{feedback.ID}, learningWorkspace); err != nil {
+		t.Fatal("learning staging retry failed", err)
+	}
+	mergedBytes, err := os.ReadFile(filepath.Join(learningWorkspace, "data/train.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var merged Data
+	if err = decodeArtifact(mergedBytes, &merged); err != nil || len(merged.Rows) != 6000 {
+		t.Fatal("cumulative train count", err)
+	}
+	feedbackAudit, err := store.labeledData(feedback, "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range feedbackAudit.RowIDs {
+		if bytes.Contains(mergedBytes, []byte(id)) {
+			t.Fatal("feedback audit row entered training")
+		}
+	}
+
 }

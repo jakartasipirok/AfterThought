@@ -23,6 +23,7 @@ type Store struct {
 }
 
 type CreateOptions struct {
+	EvaluationOnly       bool     `json:"evaluation_only,omitempty"`
 	Name                 string   `json:"name"`
 	Task                 string   `json:"task"`
 	Target               string   `json:"target"`
@@ -87,6 +88,7 @@ type Split struct {
 }
 
 type Dataset struct {
+	EvaluationOnly bool             `json:"evaluation_only,omitempty"`
 	ID             string           `json:"id"`
 	Name           string           `json:"name"`
 	Task           string           `json:"task"`

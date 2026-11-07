@@ -8,6 +8,9 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +26,15 @@ import (
 
 func (s *Server) pipelineRoutes(m *http.ServeMux) {
 	s.policyRoutes(m)
+	m.HandleFunc("GET /api/learning-demo", func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile(filepath.Join(s.Files.Root, "learning-demo.json"))
+		if err != nil {
+			failure(w, 404, "Prepare the local learning CSVs first; see docs/demo-learning-rounds.md")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(data)
+	})
 	m.HandleFunc("GET /api/auto-review", s.autoReviewStatus)
 	m.HandleFunc("PUT /api/auto-review", s.setAutoReview)
 	m.HandleFunc("POST /api/datasets", s.uploadDataset)
@@ -225,6 +237,10 @@ func (s *Server) startBuild(w http.ResponseWriter, r *http.Request, in pipeline.
 			return
 		}
 	}
+	if err := s.Pipeline.Datasets.ValidateLearning(r.Context(), in.DatasetID, in.FeedbackDatasetIDs, in.BacktestDatasetIDs); err != nil {
+		pipelineError(w, err)
+		return
+	}
 	j, created, err := s.Pipeline.AdmitBuild(r.Context(), in)
 	if err != nil {
 		pipelineError(w, err)
@@ -325,10 +341,11 @@ func (s *Server) releaseNode(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) tune(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		ID       string `json:"id"`
-		NodeID   string `json:"node_id"`
-		Prompt   string `json:"prompt"`
-		MaxTurns int    `json:"max_turns"`
+		FeedbackDatasetIDs []string `json:"feedback_dataset_ids,omitempty"`
+		ID                 string   `json:"id"`
+		NodeID             string   `json:"node_id"`
+		Prompt             string   `json:"prompt"`
+		MaxTurns           int      `json:"max_turns"`
 	}
 	if !decode(w, r, &request) {
 		return
@@ -338,7 +355,24 @@ func (s *Server) tune(w http.ResponseWriter, r *http.Request) {
 		pipelineError(w, err)
 		return
 	}
-	s.startBuild(w, r, pipeline.BuildInput{ID: request.ID, Task: rel.Task, DatasetID: rel.DatasetID, Prompt: request.Prompt, MaxTurns: request.MaxTurns, ParentReleaseID: rel.ID, NodeID: request.NodeID})
+	backtests := []string{}
+	for _, report := range rel.Backtests {
+		backtests = append(backtests, report.DatasetID)
+	}
+	if request.FeedbackDatasetIDs == nil {
+		request.FeedbackDatasetIDs = rel.FeedbackDatasetIDs
+	}
+	for _, id := range rel.FeedbackDatasetIDs {
+		if !slices.Contains(request.FeedbackDatasetIDs, id) {
+			failure(w, 400, "retain prior learning datasets when adding a round")
+			return
+		}
+	}
+	if !slices.Equal(request.FeedbackDatasetIDs, rel.FeedbackDatasetIDs) && !strings.HasPrefix(request.NodeID, "fit:") {
+		failure(w, 400, "additional training data requires tuning a fit node")
+		return
+	}
+	s.startBuild(w, r, pipeline.BuildInput{FeedbackDatasetIDs: request.FeedbackDatasetIDs, BacktestDatasetIDs: backtests, ID: request.ID, Task: rel.Task, DatasetID: rel.DatasetID, Prompt: request.Prompt, MaxTurns: request.MaxTurns, ParentReleaseID: rel.ID, NodeID: request.NodeID})
 }
 func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	var request struct {

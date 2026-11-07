@@ -300,6 +300,9 @@ func prepare(raw []byte, t table, supplied CreateOptions) (Dataset, map[string]D
 	for _, class := range classes {
 		sort.Slice(class, func(i, j int) bool { return score(class[i]) < score(class[j]) })
 		train, development := len(class)*60/100, len(class)*20/100
+		if options.EvaluationOnly {
+			train, development = 0, 0
+		}
 		splitIndices["train"] = append(splitIndices["train"], class[:train]...)
 		splitIndices["development"] = append(splitIndices["development"], class[train:train+development]...)
 		splitIndices["audit"] = append(splitIndices["audit"], class[train+development:]...)
@@ -328,7 +331,7 @@ func prepare(raw []byte, t table, supplied CreateOptions) (Dataset, map[string]D
 		Digest  string        `json:"digest"`
 		Options CreateOptions `json:"options"`
 	}{"v1", digest, options})
-	dataset = Dataset{ID: "dataset-" + strings.TrimPrefix(identity, "sha256:")[:24], Name: options.Name, Task: options.Task, Digest: digest, Target: options.Target, PositiveLabel: options.PositiveLabel, LabelMeaning: options.LabelMeaning, FeatureColumns: append([]string(nil), options.FeatureColumns...), LabelsVerified: options.LabelsVerified, Synthetic: options.Synthetic, Rows: len(t.rows), Policy: policy, Splits: map[string]Split{}}
+	dataset = Dataset{EvaluationOnly: options.EvaluationOnly, ID: "dataset-" + strings.TrimPrefix(identity, "sha256:")[:24], Name: options.Name, Task: options.Task, Digest: digest, Target: options.Target, PositiveLabel: options.PositiveLabel, LabelMeaning: options.LabelMeaning, FeatureColumns: append([]string(nil), options.FeatureColumns...), LabelsVerified: options.LabelsVerified, Synthetic: options.Synthetic, Rows: len(t.rows), Policy: policy, Splits: map[string]Split{}}
 	dataset.Profile = Profile{Name: dataset.Name, Rows: dataset.Rows, SourceColumns: len(t.headers), SelectedColumns: len(fields), Target: dataset.Target, PositiveLabel: dataset.PositiveLabel, LabelMeaning: dataset.LabelMeaning, LabelsVerified: dataset.LabelsVerified, Synthetic: dataset.Synthetic, Fields: fields, LabelCounts: LabelCounts{Positive: len(classes[1]), Negative: len(classes[0])}, SplitCounts: counts}
 	return dataset, splits, nil
 }

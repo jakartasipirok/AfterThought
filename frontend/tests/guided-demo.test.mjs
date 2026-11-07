@@ -121,3 +121,41 @@ test("comparison renders actual equal, lower and unavailable metrics without inv
   assert.ok(!story.includes('<script>'));
   assert.match(story, /&lt;script&gt;/);
 });
+
+test("restored progress is published immediately before polling another scope", () => {
+  const f = fixture();
+  const record = { version: 1, task: f.task, actor: "Presenter", jobID: `${f.task}-bootstrap`, submitted: true };
+  f.controller(record);
+  assert.equal(f.snapshots.length, 1);
+  assert.equal(f.snapshots[0].record.task, f.task);
+  assert.equal(f.requests.length, 0);
+});
+
+test("archived saved progress resets to a usable start form after a confirmed missing job", async () => {
+  const snapshots = [], selections = [];
+  let saved = "unchanged";
+  const controller = createGuidedDemo({
+    record: { task: "demo-archived", jobID: "demo-archived-bootstrap", submitted: true },
+    api: async () => { const error = new Error("record not found"); error.status = 404; throw error; },
+    loadPDF: async () => "", save: record => { saved = record; },
+    select: (...args) => selections.push(args), changed: snapshot => snapshots.push(structuredClone(snapshot))
+  });
+  await controller.refresh({ allowAdvance: false });
+  assert.equal(controller.record, null);
+  assert.equal(saved, null);
+  assert.equal(snapshots.at(-1).stage.id, "new");
+  assert.deepEqual(selections, [[null, "story"]]);
+});
+
+test("temporary lookup failure retains saved progress, and checking another scope starts no jobs", async () => {
+  const record = { task: "demo-saved", jobID: "demo-saved-bootstrap", submitted: true };
+  const controller = createGuidedDemo({ record, api: async () => { throw new Error("Offline"); },
+    loadPDF: async () => "", save: () => {}, select: () => {}, changed: () => {} });
+  await controller.refresh({ allowAdvance: false });
+  assert.equal(controller.record.jobID, record.jobID);
+  const f = fixture(), guide = f.controller();
+  await guide.start("Presenter", "12345678");
+  f.activate();
+  await guide.refresh({ allowAdvance: false });
+  assert.equal(f.runs.size, 0);
+});

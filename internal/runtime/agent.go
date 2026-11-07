@@ -24,16 +24,17 @@ import (
 const TaskQueue = "afterthought-agent-v1"
 
 type Input struct {
-	PolicyID        string `json:"policy_id,omitempty"`
-	PolicyReviewID  string `json:"policy_review_id,omitempty"`
-	ID              string `json:"id"`
-	Task            string `json:"task"`
-	Prompt          string `json:"prompt"`
-	MaxTurns        int    `json:"max_turns"`
-	DatasetID       string `json:"dataset_id,omitempty"`
-	ParentReleaseID string `json:"parent_release_id,omitempty"`
-	TargetNode      string `json:"target_node,omitempty"`
-	ResumeSessionID string `json:"resume_session_id,omitempty"`
+	FeedbackDatasetIDs []string `json:"feedback_dataset_ids,omitempty"`
+	PolicyID           string   `json:"policy_id,omitempty"`
+	PolicyReviewID     string   `json:"policy_review_id,omitempty"`
+	ID                 string   `json:"id"`
+	Task               string   `json:"task"`
+	Prompt             string   `json:"prompt"`
+	MaxTurns           int      `json:"max_turns"`
+	DatasetID          string   `json:"dataset_id,omitempty"`
+	ParentReleaseID    string   `json:"parent_release_id,omitempty"`
+	TargetNode         string   `json:"target_node,omitempty"`
+	ResumeSessionID    string   `json:"resume_session_id,omitempty"`
 }
 type Outcome struct {
 	ID         string         `json:"id"`

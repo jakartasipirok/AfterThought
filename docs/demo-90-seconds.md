@@ -6,7 +6,7 @@ Use the **Graph Runtime** page for the whole demonstration. The three visible se
 
 Start the local server with `make demo` and open <http://127.0.0.1:8080/graphs.html>. If an older server is running, stop it with Ctrl+C first. PDF extraction requires Poppler. Allow time for model authoring and evaluation before presenting.
 
-1. Enter your name and click **Start demo**. The page loads 1,000 synthetic claims and the fictional company-policy PDF, then starts authoring. Follow the visible progress and expandable model activity.
+1. Choose **Policy review · synthetic claims**, enter your name and click **Start demo**. The page loads 1,000 synthetic claims and the fictional company-policy PDF, then starts authoring. Follow the visible progress and expandable model activity.
 2. Review the initial graph and evaluation. Click **Approve and activate**. Your name is already filled in.
 3. Watch the timeline update automatically as ordinary claims and the controlled emerging-pattern batch run. The serving counters show the actual model-call and token counts.
 4. Review the cited policy proposal. Enter your assessment and a note such as “Verify original supporting evidence before any claim consequence,” then click **Approve policy amendment**.

@@ -38,7 +38,7 @@ func (s *Service) PrepareAuthoring(ctx context.Context, in agentruntime.Input, w
 	if d.Task != in.Task {
 		return "", fmt.Errorf("dataset belongs to a different task")
 	}
-	if err = s.Datasets.StageTraining(ctx, in.DatasetID, workspace); err != nil {
+	if err = s.Datasets.StageLearning(ctx, in.DatasetID, in.FeedbackDatasetIDs, workspace); err != nil {
 		return "", err
 	}
 	if in.ResumeSessionID != "" {
@@ -156,6 +156,8 @@ The FIT graph has at least one node and runs ONCE on training data. The SERVE gr
 data/train.json and data/development.json have {"rows":[feature objects],"labels":[0 or1],"row_ids":[stable string IDs]}. CSV values have frozen inferred types: number, boolean, string, or null; inspect profile.json. Learn and freeze any additional preprocessing using training data only. A serving input has {"rows":[feature objects],"row_ids":[stable IDs]} WITHOUT labels or target. The harness holds audit data outside your workspace. Split membership and metric thresholds were frozen at dataset intake. No holdout fitting, label-derived features, or fabricated metrics. Make randomness deterministic.
 
 The final serving node MUST return exactly {"predictions":[{"row_id":"matching input row ID","probability":0.0,"decision":"accept or escalate or reject","reasons":["nonempty grounded reason"]}]} with one prediction per input row, preserving row identity, finite probability in[0,1], at least one reason. Decisions are recommendations; do not invent fraud ground truth. The human-declared target semantics and positive-label mapping are in profile.json. The backend computes actual accuracy/precision/recall/F1/FPR against reserved labels; a successful Python process is not evidence of predictive quality.
+
+Write prediction reasons for a claims reviewer. Aim for two to four short reasons, each with one clear fact or action in everyday English. Give the important observed value and a concrete next check when relevant. Use readable feature descriptions in explanations and exact feature keys in code. State the score's meaning or uncertainty once. Keep batch IDs, internal artifacts, repeated approval mechanics, and long policy quotations out of prediction reasons. Preserve material limits and never turn a numerical signal into a confirmed fraud finding.
 
 Write meaningful local tests and run them, then ensure candidate.json and ALL referenced source files exist. Put tunable thresholds, feature selections, and model parameters into each node's config instead of burying them in orchestration code. The supervisor snapshots every source/config into an immutable node revision and executes the actual fit and serve DAGs for evaluation. You cannot approve or promote a candidate. Human-only approval is required even when all gates pass.
 

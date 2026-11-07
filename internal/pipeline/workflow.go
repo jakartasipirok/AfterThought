@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jakartasipirok/AfterThought/internal/dataset"
 	"github.com/jakartasipirok/AfterThought/internal/execution"
 	"github.com/jakartasipirok/AfterThought/internal/graph"
 	agentruntime "github.com/jakartasipirok/AfterThought/internal/runtime"
@@ -19,6 +21,7 @@ import (
 )
 
 type Plan struct {
+	Backtests   []graph.Artifact  `json:"backtests,omitempty"`
 	Graph       execution.Release `json:"graph"`
 	Train       graph.Artifact    `json:"train"`
 	Development graph.Artifact    `json:"development"`
@@ -30,6 +33,7 @@ type PackageInput struct {
 	SessionID string
 }
 type EvaluationInput struct {
+	Backtests               []execution.RunResult
 	Build                   BuildInput
 	Plan                    Plan
 	Fit, Development, Audit execution.RunResult
@@ -82,7 +86,7 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 		session := AuthorSessionID(in.ID, attempt)
 		authorCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{WorkflowID: session, WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE})
 		var outcome agentruntime.Outcome
-		input := agentruntime.Input{ID: session, Task: in.Task, Prompt: prompt, MaxTurns: in.MaxTurns, DatasetID: in.DatasetID, ParentReleaseID: in.ParentReleaseID, TargetNode: in.NodeID, PolicyID: in.PolicyID, ResumeSessionID: previous}
+		input := agentruntime.Input{ID: session, Task: in.Task, Prompt: prompt, MaxTurns: in.MaxTurns, DatasetID: in.DatasetID, ParentReleaseID: in.ParentReleaseID, TargetNode: in.NodeID, PolicyID: in.PolicyID, ResumeSessionID: previous, FeedbackDatasetIDs: in.FeedbackDatasetIDs}
 		if err = workflow.ExecuteChildWorkflow(authorCtx, agentruntime.AgentWorkflow, input).Get(ctx, &outcome); err != nil {
 			return "", err
 		}
@@ -138,7 +142,16 @@ func BuildWorkflow(ctx workflow.Context, in BuildInput) (releaseID string, err e
 		}
 		regression = &report
 	}
-	err = workflow.ExecuteActivity(ctx, "PipelineEvaluate", EvaluationInput{Build: in, Plan: plan, Fit: fit, Development: dev, Audit: audit, Regression: regression}).Get(ctx, &releaseID)
+	// Old workflow inputs omit backtests and retain the original command sequence.
+	var backtests []execution.RunResult
+	for i, input := range plan.Backtests {
+		result, runErr := graphChild(ctx, fmt.Sprintf("internal/build/%s/backtest/%d", in.ID, i), plan.Graph.Serve, input, fit.Output)
+		if runErr != nil {
+			return "", runErr
+		}
+		backtests = append(backtests, result)
+	}
+	err = workflow.ExecuteActivity(ctx, "PipelineEvaluate", EvaluationInput{Backtests: backtests, Build: in, Plan: plan, Fit: fit, Development: dev, Audit: audit, Regression: regression}).Get(ctx, &releaseID)
 	return releaseID, err
 }
 
@@ -181,6 +194,9 @@ func (a *Activities) PipelinePrepare(ctx context.Context, in BuildInput) (string
 			return "", err
 		}
 	}
+	if err := s.Datasets.ValidateLearning(ctx, in.DatasetID, in.FeedbackDatasetIDs, in.BacktestDatasetIDs); err != nil {
+		return "", err
+	}
 	d, err := s.Datasets.Get(ctx, in.DatasetID)
 	if err != nil {
 		return "", err
@@ -195,6 +211,9 @@ func (a *Activities) PipelinePrepare(ctx context.Context, in BuildInput) (string
 		}
 		if p.DatasetID != d.ID || p.Task != in.Task {
 			return "", fmt.Errorf("node tuning must use incumbent dataset and task")
+		}
+		if !slices.Equal(in.FeedbackDatasetIDs, p.FeedbackDatasetIDs) && !strings.HasPrefix(in.NodeID, "fit:") {
+			return "", fmt.Errorf("changing training datasets requires a fit-node revision")
 		}
 		if in.NodeID == "" {
 			return "", fmt.Errorf("select one fit:node or serve:node for tuning")
@@ -270,7 +289,7 @@ func (a *Activities) PipelinePackage(ctx context.Context, in PackageInput) (Plan
 			plan.ExistingFit = parent.FitArtifact
 		}
 	}
-	if plan.Train, err = s.Datasets.Inputs(ctx, in.Build.DatasetID, "train", true); err != nil {
+	if plan.Train, err = s.Datasets.LearningInput(ctx, in.Build.DatasetID, in.Build.FeedbackDatasetIDs, "train"); err != nil {
 		return plan, err
 	}
 	if plan.Development, err = s.Datasets.Inputs(ctx, in.Build.DatasetID, "development", false); err != nil {
@@ -279,6 +298,13 @@ func (a *Activities) PipelinePackage(ctx context.Context, in PackageInput) (Plan
 	plan.Audit, err = s.Datasets.Inputs(ctx, in.Build.DatasetID, "audit", false)
 	if err != nil {
 		return plan, err
+	}
+	for _, id := range in.Build.BacktestDatasetIDs {
+		input, e := s.Datasets.Inputs(ctx, id, "audit", false)
+		if e != nil {
+			return plan, e
+		}
+		plan.Backtests = append(plan.Backtests, input)
 	}
 	provisional := Release{ID: "draft-" + strings.TrimPrefix(graph.Hash([]byte(in.Build.ID+"/"+plan.Graph.ID)), "sha256:"), Task: in.Build.Task, DatasetID: in.Build.DatasetID, ParentReleaseID: in.Build.ParentReleaseID, NodeID: in.Build.NodeID, Status: "evaluating", Graph: plan.Graph, FitArtifact: plan.ExistingFit, CreatedAt: time.Now().UTC()}
 	if err = s.SaveRelease(ctx, provisional); err != nil {
@@ -312,9 +338,26 @@ func (a *Activities) PipelineEvaluate(ctx context.Context, in EvaluationInput) (
 			dev.Failures = append(dev.Failures, "development F1 regressed against the immutable incumbent")
 		}
 	}
+	if len(in.Backtests) != len(in.Build.BacktestDatasetIDs) {
+		return "", fmt.Errorf("backtest results are incomplete")
+	}
+	var backtests []dataset.Report
+	for i, result := range in.Backtests {
+		report, e := s.Datasets.Evaluate(ctx, in.Build.BacktestDatasetIDs[i], "audit", result.Output)
+		if e != nil {
+			return "", e
+		}
+		backtests = append(backtests, report)
+	}
 	identity := map[string]any{"graph": in.Plan.Graph, "fit_artifact": in.Fit.Output, "dataset_id": in.Build.DatasetID}
 	if in.Build.AutoReviewID != "" {
 		identity["auto_review_id"] = in.Build.AutoReviewID
+	}
+	if len(in.Build.BacktestDatasetIDs) > 0 {
+		identity["backtests"] = in.Build.BacktestDatasetIDs
+	}
+	if len(in.Build.FeedbackDatasetIDs) > 0 {
+		identity["feedback"] = in.Build.FeedbackDatasetIDs
 	}
 	id := graph.Digest(identity)
 	status := "rejected"
@@ -322,6 +365,7 @@ func (a *Activities) PipelineEvaluate(ctx context.Context, in EvaluationInput) (
 		status = "eligible"
 	}
 	r := Release{ID: id, Task: in.Build.Task, DatasetID: in.Build.DatasetID, ParentReleaseID: in.Build.ParentReleaseID, NodeID: in.Build.NodeID, Status: status, Graph: in.Plan.Graph, FitArtifact: in.Fit.Output, Development: dev, Audit: audit, FitTrace: in.Fit.Nodes, DevelopmentTrace: in.Development.Nodes, AuditTrace: in.Audit.Nodes, CreatedAt: time.Now().UTC()}
+	r.Backtests, r.FeedbackDatasetIDs = backtests, in.Build.FeedbackDatasetIDs
 	r.AutoReviewID, r.Regression = in.Build.AutoReviewID, in.Regression
 	if err = s.SaveRelease(ctx, r); err != nil {
 		return "", err

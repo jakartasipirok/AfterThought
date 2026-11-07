@@ -38,16 +38,18 @@ type Service struct {
 }
 
 type BuildInput struct {
-	PolicyID        string          `json:"policy_id,omitempty"`
-	ID              string          `json:"id"`
-	Task            string          `json:"task"`
-	DatasetID       string          `json:"dataset_id"`
-	Prompt          string          `json:"prompt"`
-	MaxTurns        int             `json:"max_turns"`
-	ParentReleaseID string          `json:"parent_release_id,omitempty"`
-	NodeID          string          `json:"node_id,omitempty"`
-	AutoReviewID    string          `json:"auto_review_id,omitempty"`
-	Regression      *RegressionSpec `json:"regression,omitempty"`
+	FeedbackDatasetIDs []string        `json:"feedback_dataset_ids,omitempty"`
+	BacktestDatasetIDs []string        `json:"backtest_dataset_ids,omitempty"`
+	PolicyID           string          `json:"policy_id,omitempty"`
+	ID                 string          `json:"id"`
+	Task               string          `json:"task"`
+	DatasetID          string          `json:"dataset_id"`
+	Prompt             string          `json:"prompt"`
+	MaxTurns           int             `json:"max_turns"`
+	ParentReleaseID    string          `json:"parent_release_id,omitempty"`
+	NodeID             string          `json:"node_id,omitempty"`
+	AutoReviewID       string          `json:"auto_review_id,omitempty"`
+	Regression         *RegressionSpec `json:"regression,omitempty"`
 }
 type Job struct {
 	BuildInput
@@ -60,25 +62,27 @@ type Job struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 type Release struct {
-	ID               string                 `json:"id"`
-	Task             string                 `json:"task"`
-	DatasetID        string                 `json:"dataset_id"`
-	ParentReleaseID  string                 `json:"parent_release_id,omitempty"`
-	NodeID           string                 `json:"node_id,omitempty"`
-	Status           string                 `json:"status"`
-	ExecutionError   string                 `json:"execution_error,omitempty"`
-	Graph            execution.Release      `json:"graph"`
-	FitArtifact      graph.Artifact         `json:"fit_artifact"`
-	Development      dataset.Report         `json:"development"`
-	Audit            dataset.Report         `json:"audit"`
-	FitTrace         []execution.NodeResult `json:"fit_trace"`
-	DevelopmentTrace []execution.NodeResult `json:"development_trace"`
-	AuditTrace       []execution.NodeResult `json:"audit_trace"`
-	CreatedAt        time.Time              `json:"created_at"`
-	ApprovedAt       *time.Time             `json:"approved_at,omitempty"`
-	ApprovedBy       string                 `json:"approved_by,omitempty"`
-	AutoReviewID     string                 `json:"auto_review_id,omitempty"`
-	Regression       *RegressionReport      `json:"regression,omitempty"`
+	FeedbackDatasetIDs []string               `json:"feedback_dataset_ids,omitempty"`
+	Backtests          []dataset.Report       `json:"backtests,omitempty"`
+	ID                 string                 `json:"id"`
+	Task               string                 `json:"task"`
+	DatasetID          string                 `json:"dataset_id"`
+	ParentReleaseID    string                 `json:"parent_release_id,omitempty"`
+	NodeID             string                 `json:"node_id,omitempty"`
+	Status             string                 `json:"status"`
+	ExecutionError     string                 `json:"execution_error,omitempty"`
+	Graph              execution.Release      `json:"graph"`
+	FitArtifact        graph.Artifact         `json:"fit_artifact"`
+	Development        dataset.Report         `json:"development"`
+	Audit              dataset.Report         `json:"audit"`
+	FitTrace           []execution.NodeResult `json:"fit_trace"`
+	DevelopmentTrace   []execution.NodeResult `json:"development_trace"`
+	AuditTrace         []execution.NodeResult `json:"audit_trace"`
+	CreatedAt          time.Time              `json:"created_at"`
+	ApprovedAt         *time.Time             `json:"approved_at,omitempty"`
+	ApprovedBy         string                 `json:"approved_by,omitempty"`
+	AutoReviewID       string                 `json:"auto_review_id,omitempty"`
+	Regression         *RegressionReport      `json:"regression,omitempty"`
 }
 type BatchInput struct {
 	ID        string         `json:"id"`

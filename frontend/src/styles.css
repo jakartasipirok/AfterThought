@@ -316,6 +316,7 @@ body:has(.drawer.open) { overflow: hidden; }
 .policy-proposal h3 { margin: 10px 0; }
 .policy-proposal h4 { margin: 18px 0 8px; }
 .policy-proposal p { line-height: 1.65; overflow-wrap: anywhere; }
+.policy-proposal .policy-copy { white-space: pre-line; max-width: 85ch; }
 .policy-proposal blockquote { margin: 16px 0; border-left: 3px solid #4363d8; padding: 0 16px; }
 .policy-proposal blockquote footer { color: #667085; font-size: 12px; }
 .policy-proposal form { display: grid; gap: 14px; margin-top: 20px; }
@@ -380,3 +381,13 @@ body[data-demo-view="story"] #refreshGraphs { display: none; }
 .story-evaluation strong { color: #344054; font-weight: 500; }
 body[data-demo-view="story"][data-demo-stage="reviewing"] #autoReviewPanel,
 body[data-demo-view="story"][data-demo-stage="reviewing"] #reviewActivityPanel { display: block; }
+
+.learning-results th, .learning-results td { min-width: 125px; }
+.learning-results td:first-child { min-width: 190px; }
+.learning-results small { display: block; color: #667085; margin-top: 5px; }
+.accuracy-track { height: 7px; background: #eef2f8; border-radius: 5px; margin-top: 8px; width: 145px; }
+.accuracy-track span { display: block; height: 100%; border-radius: inherit; background: #4363d8; }
+#guidedMode { max-width: 430px; }
+.learning-explanation-text { white-space: pre-wrap; line-height: 1.65; color: #344054; margin: 14px 0; max-width: 90ch; overflow-wrap: anywhere; }
+.learning-explanation > details { margin-top: 16px; }
+.learning-explanation summary { cursor: pointer; }

@@ -365,7 +365,10 @@ func (s *Service) claimReview(ctx context.Context, task string, manual bool) (*A
 		}
 		r.Status = "queued"
 		r.Summary = fmt.Sprintf("Review after %d finished batches with %d failures. The trigger is %s at %s. Across %d rows, missing-value counts are %s. Replay the triggering batch and evaluate the repair before human review.", len(signals), r.FailureCount, trigger.Kind, trigger.NodeID, r.Rows, encode(r.Missing))
-		r.Build = BuildInput{ID: r.ID, Task: task, DatasetID: parent.DatasetID, ParentReleaseID: parent.ID, NodeID: trigger.NodeID, MaxTurns: ReviewTurnBudget, AutoReviewID: r.ID, PolicyID: policyID, Regression: &RegressionSpec{BatchID: batch.ID, Input: batch.Input}, Prompt: r.Summary + " Improve only the selected node's robustness. Preserve probabilities and decisions on valid inputs. Add focused synthetic tests for the failure, compatible feature types and allowed nulls. Use existing development evidence and attributed memory. Never approve or activate."}
+		r.Build = BuildInput{FeedbackDatasetIDs: parent.FeedbackDatasetIDs, ID: r.ID, Task: task, DatasetID: parent.DatasetID, ParentReleaseID: parent.ID, NodeID: trigger.NodeID, MaxTurns: ReviewTurnBudget, AutoReviewID: r.ID, PolicyID: policyID, Regression: &RegressionSpec{BatchID: batch.ID, Input: batch.Input}, Prompt: r.Summary + " Improve only the selected node's robustness. Preserve probabilities and decisions on valid inputs. Add focused synthetic tests for the failure, compatible feature types and allowed nulls. Use existing development evidence and attributed memory. Never approve or activate."}
+		for _, report := range parent.Backtests {
+			r.Build.BacktestDatasetIDs = append(r.Build.BacktestDatasetIDs, report.DatasetID)
+		}
 		r.SessionID = AuthorSessionID(r.ID, 0)
 		cooldown = r.CreatedAt.Add(ReviewCooldown)
 	} else if len(r.Novelty) > 0 {

@@ -109,10 +109,20 @@ export function createGuidedDemo({ api, loadPDF, save, select, changed, record =
       record.improvedSubmitted = true; await persist();
     }
   }
-  async function refresh() {
+  async function refresh({ allowAdvance = true } = {}) {
     if (!record?.submitted || busy) { notify(); return; }
     await action(async () => {
-      const job = await api(`/bootstraps/${encodeURIComponent(record.jobID)}`);
+      let job;
+      try {
+        job = await api(`/bootstraps/${encodeURIComponent(record.jobID)}`);
+      } catch (failure) {
+        if (failure.status !== 404) throw failure;
+        record = null;
+        evidence = {};
+        await persist();
+        await select(null, "story");
+        return;
+      }
       const channel = await api(`/releases?${new URLSearchParams({ task: record.task })}`);
       evidence.job = job.job;
       evidence.release = job.release;
@@ -148,12 +158,15 @@ export function createGuidedDemo({ api, loadPDF, save, select, changed, record =
       if (evidence.emerging?.status === "completed") evidence.review = (await api(`/auto-review?${new URLSearchParams({ task: record.task })}`)).latest;
       const stage = demoStage(record, evidence);
       if (["complete", "failed"].includes(stage.id) && record.autoPrepare) { record.autoPrepare = false; await persist(); }
-      if (record.autoPrepare && ["normal", "emerging", "review", "revise", "verify"].includes(stage.id)) {
+      if (allowAdvance && record.autoPrepare && ["normal", "emerging", "review", "revise", "verify"].includes(stage.id)) {
         const waiting = stage.id === "normal" ? evidence.normal : evidence.emerging;
         if (["review", "revise", "verify"].includes(stage.id) || !waiting) await runNext();
       }
     }, false);
   }
+  // Publish restored state before the first poll, including when its scope
+  // differs from the page URL. Start must never appear for an existing record.
+  notify();
   return {
     get record() { return record; },
     refresh,

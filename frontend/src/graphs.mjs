@@ -18,6 +18,12 @@ const state = {
 const buildActivity = activityLoader(api, $("#buildActivity"));
 const policyDemo = initPolicyDemo(api, () => state.task, refresh);
 const guidedDemo = initGuidedDemo({ api, getTask: () => state.task, select: async (demo, view, run) => {
+  if (!demo) {
+    changeScope("insurance-fraud-demo");
+    showError();
+    await refresh();
+    return;
+  }
   if (demo.task !== state.task) changeScope(demo.task);
   state.datasetID = demo.datasetID || null;
   state.jobID = demo.revisionSubmitted ? demo.revisionID : demo.submitted ? demo.jobID : null;

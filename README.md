@@ -2,9 +2,9 @@
 
 The thinking already happened; now it just runs.
 
-A Go/Temporal agent harness that starts with **no domain-specific functions, rules, nodes, or seeded graphs**. The model sees exactly four tools: `read`, `bash`, `edit`, and `write`. It creates its own candidate code and graph files from the user's task.
+A Go/Temporal graph runtime and authoring harness that starts with **no domain-specific functions, rules, nodes, or seeded graphs**. The model sees exactly four tools: `read`, `bash`, `edit`, and `write`. From an uploaded labelled CSV, it authors separate fit and serving DAGs, with individually versioned Python nodes and tunable configuration.
 
-The harness provides durable authoring, isolated tool execution, progressive skill loading, attributed feedback, and **Hindsight learning memory**. Its browser workspace connects directly to these capabilities. Packaging generated nodes, evaluating and promoting releases, proactive evolution, and token-free graph serving are subsequent stages. This scaffold does not claim to solve fraud detection yet.
+The trusted supervisor snapshots node packages, trains on a frozen split, evaluates held-out predictions, and retains the evidence. **Passing evaluation never activates a release. Explicit human approval is required.** An approved serving graph processes a whole CSV batch using ordinary code/ML, with zero LLM calls or tokens. Hindsight supplies attributed learning evidence for later node improvements; it is not queried during serving.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ docker pull python:3.12-bookworm
 make demo
 ```
 
-Open **http://127.0.0.1:8080**. `make demo` starts Postgres, Temporal, and Hindsight, builds the Go binary, initializes the schema, and runs the agent worker with the UI/API in one process. The first startup downloads service images and may take a few minutes. Keep this terminal running.
+Open **http://127.0.0.1:8080/graphs.html** for CSV-to-graph execution, or **http://127.0.0.1:8080** for the general authoring workspace. `make demo` starts Postgres, Temporal, and Hindsight, builds a generic Python/NumPy/pandas/scikit-learn environment and the Go binary, initializes the schemas, and runs the worker with the UI/API. The first startup downloads images and dependencies and may take several minutes. Keep this terminal running.
 
 Press **Ctrl+C** to stop the UI and worker. Run `make down` to stop the supporting services while retaining their volumes. Run `make demo` again to restart with saved sessions and memory. Keep `.env`, `.afterthought/`, and the Docker volumes locally; Git ignores the configuration and generated state.
 
@@ -33,11 +33,23 @@ Service dashboards: Temporal at <http://127.0.0.1:8233> and Hindsight at <http:/
 
 See the [demo walkthrough](docs/demo.md) for a presentation sequence.
 
-1. Submit a prompt, optionally with a dataset URL, task memory scope, and turn budget. The agent starts from its empty domain library.
-2. Watch durable session progress, actual tool calls, token usage, generated files, and final output. Refreshing the page reconnects to retained sessions.
-3. Save attributed human feedback under the same task scope. Recall Hindsight evidence, then start another session in that scope to use it. Retention is asynchronous; feedback does not automatically edit an existing workflow.
+1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
+2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
+3. Inspect each node's pinned source/configuration, execution evidence, and evaluation reports. Select one node and request a revision. Every other node and the topology must remain unchanged; serving-node edits reuse the frozen fitted artifact. Candidates that regress in development F1 or fail gates are ineligible.
+4. A human reviews the eligible candidate and explicitly approves activation. Read the host-only approval key in your own terminal:
 
-The **claims replay** link is a separate illustrative policy demo. Its fictional rules, simulated failures, and local review choices are not agent-authored or promoted workflows; see [replay details](docs/claims-replay.md). Live sessions do not import that ruleset. Dataset downloads still require enabling sandbox networking, and real fraud accuracy requires verified labels.
+   ```sh
+   bin/afterthought approval-code
+   ```
+
+   Enter that key and your reviewer identity in the approval form and confirm the named release. The key is stored in ignored `.afterthought/operator-approval.key`, never mounted into agent/node containers, and never returned by the API. Approval uses an expected-current-release check and an atomic audit record. Each revision needs a separate human approval.
+5. Upload an inference CSV and run an approved release. The graph processes the batch without a model or Hindsight client; nodes have no network or provider credentials. Download the predictions, reasons, node trace, and zero-token counters. Existing runs remain pinned when a later release is activated.
+
+The general authoring page still supports prompts, optional dataset URLs, tool traces/files, human feedback, and Hindsight recall. Executable graph intake currently uses CSV upload, not automatic Kaggle ingestion.
+
+The **claims replay** is a separate illustrative policy demo. Its fictional rules and browser decisions are not agent-authored or promoted workflows; see [replay details](docs/claims-replay.md). Live sessions do not import that ruleset. Real fraud accuracy requires externally verified labels; the bundled Kaggle extract has none. `CLAIM_STATUS` is excluded from graph features and targets.
+
+This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. Autonomous improvement scheduling, shared image registries, multi-tenant authentication, and production claim settlement are not implemented.
 
 `bin/afterthought serve --with-worker=false` serves the UI/API with a separately running worker. Use `--addr 127.0.0.1:8081` or `--ui-dir frontend` to change local settings. The server accepts loopback bindings only; it is a local demo with access to agent execution, not an authenticated public service. API calls use the same origin and never send the provider key to the browser.
 
@@ -54,6 +66,7 @@ colima start                       # if using Colima and it is stopped
 docker pull python:3.12-bookworm    # generic Bash/Python environment
 make up
 make init
+make graph-runtime
 make worker
 ```
 
@@ -87,7 +100,7 @@ The design follows [Pi's default four tools](https://github.com/earendil-works/p
 - `edit`: replace exactly one matching text fragment.
 - `write`: create or replace a workspace file atomically.
 
-`bin/afterthought tools` prints the exact model-visible definitions. The initial prompt includes only skill names, descriptions, and paths. Full instructions are read on demand from the read-only skill mount. The supplied skill describes graph authoring and evaluation discipline; it contains no business implementation.
+`bin/afterthought tools` prints the model-visible definitions. Skill bodies load on demand from the read-only mount. CSV sessions also stage a lazy `graph-authoring.md` protocol guide and permitted training/development data; no business implementation is seeded. Generated nodes expose `run(inputs, config)`; the trusted pinned wrapper implements artifact I/O and result checksums.
 
 ## Hindsight memory
 
@@ -107,7 +120,7 @@ bin/afterthought sync-memory --task insurance-research
 
 Retain is asynchronous. A stable document ID and operation UUID make outbox retries safe; acceptance does not mean processing has completed. Feedback remains available in the local journal while Hindsight processes it. If delivery fails after a run, the completed work remains saved and the outbox can be retried. A configured Hindsight recall failure is surfaced, not silently hidden.
 
-`AFTERTHOUGHT_MEMORY_BACKEND=local` is an explicit offline mode for development. It does not provide Hindsight learning. Hindsight extraction, embeddings, and reflection may incur provider usage beyond the authoring-model usage shown in the session journal. They belong on the learning path, not the future token-free serving path.
+`AFTERTHOUGHT_MEMORY_BACKEND=local` is an explicit offline mode for development. It does not provide Hindsight learning. Hindsight extraction, embeddings, and reflection may incur provider usage beyond the authoring-model usage shown in the session journal. They belong on the learning path and are excluded from graph serving.
 
 ## Verify
 
@@ -120,6 +133,6 @@ Integration tests require the services and sandbox image. They use mock model/Hi
 
 The agent's Bash receives only the workspace and read-only skills. The Docker socket, host files, and provider credentials are excluded. Resource/time limits and an expired-container reaper bound work while the worker runs. Docker is a local demo boundary, not a production claim for arbitrary hostile code.
 
-The generic graph contract can be checked with `bin/afterthought validate --graph graph.json`. This checks structure and immutable references; it does not build packages, run evaluations, or promote a release. Unbuilt candidates should use `graph.proposal.json` and state unresolved artifacts explicitly.
+`bin/afterthought validate --graph graph.json` remains a structural validator for legacy v1 manifests. Executable CSV candidates use v2 `candidate.json` with fit/serve DAGs and are packaged/evaluated through the graph runtime UI/API. A plain `graph.proposal.json` remains an unresolved authoring artifact and cannot be served.
 
 `make down` retains volumes. Preserve `.afterthought/` and the Postgres, Temporal, and Hindsight volumes. See [architecture](docs/architecture.md) and [dataset notes](docs/dataset-notes.md).

@@ -38,15 +38,16 @@ func encode(v any) []byte {
 }
 
 type Session struct {
-	ID         string         `json:"id"`
-	Task       string         `json:"task"`
-	Transcript graph.Artifact `json:"transcript"`
-	Image      string         `json:"image"`
-	Status     string         `json:"status"`
+	ID          string         `json:"id"`
+	Task        string         `json:"task"`
+	Transcript  graph.Artifact `json:"transcript"`
+	Image       string         `json:"image"`
+	Status      string         `json:"status"`
+	InputDigest string         `json:"input_digest,omitempty"`
 }
 
 func (d *DB) CreateSession(ctx context.Context, s Session) (Session, error) {
-	_, err := d.Pool.Exec(ctx, `INSERT INTO agent_sessions(id,task_id,transcript,image,status) VALUES($1,$2,$3,$4,'running') ON CONFLICT DO NOTHING`, s.ID, s.Task, encode(s.Transcript), s.Image)
+	_, err := d.Pool.Exec(ctx, `INSERT INTO agent_sessions(id,task_id,transcript,image,status,input_digest) VALUES($1,$2,$3,$4,'running',$5) ON CONFLICT DO NOTHING`, s.ID, s.Task, encode(s.Transcript), s.Image, s.InputDigest)
 	if err != nil {
 		return s, err
 	}
@@ -55,7 +56,7 @@ func (d *DB) CreateSession(ctx context.Context, s Session) (Session, error) {
 func (d *DB) Session(ctx context.Context, id string) (Session, error) {
 	var s Session
 	var b []byte
-	err := d.Pool.QueryRow(ctx, `SELECT id,task_id,transcript,image,status FROM agent_sessions WHERE id=$1`, id).Scan(&s.ID, &s.Task, &b, &s.Image, &s.Status)
+	err := d.Pool.QueryRow(ctx, `SELECT id,task_id,transcript,image,status,input_digest FROM agent_sessions WHERE id=$1`, id).Scan(&s.ID, &s.Task, &b, &s.Image, &s.Status, &s.InputDigest)
 	if err != nil {
 		return s, err
 	}

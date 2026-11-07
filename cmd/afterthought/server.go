@@ -42,6 +42,10 @@ func serve(db *storage.DB, files *storage.Files, c client.Client, queue, modelNa
 	if err != nil {
 		return err
 	}
+	p, err := newPipeline(startup, db, files)
+	if err != nil {
+		return err
+	}
 	if withWorker {
 		w, err := startWorker(startup, db, files, c, queue, modelName)
 		if err != nil {
@@ -50,7 +54,7 @@ func serve(db *storage.DB, files *storage.Files, c client.Client, queue, modelNa
 		defer w.Stop()
 		go reapContainers(ctx)
 	}
-	api := &webapi.Server{DB: db, Files: files, Temporal: c, Queue: queue, Hindsight: h, Model: modelName}
+	api := &webapi.Server{DB: db, Files: files, Temporal: c, Queue: queue, Hindsight: h, Model: modelName, Pipeline: p}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", api.Handler())
 	mux.Handle("/", staticFrontend(root.FS()))

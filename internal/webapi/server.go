@@ -26,6 +26,7 @@ import (
 	"github.com/jakartasipirok/AfterThought/internal/harness"
 	"github.com/jakartasipirok/AfterThought/internal/memory"
 	"github.com/jakartasipirok/AfterThought/internal/model"
+	"github.com/jakartasipirok/AfterThought/internal/pipeline"
 	agentruntime "github.com/jakartasipirok/AfterThought/internal/runtime"
 	"github.com/jakartasipirok/AfterThought/internal/storage"
 	"go.temporal.io/api/enums/v1"
@@ -41,6 +42,7 @@ type Server struct {
 	Queue     string
 	Hindsight *memory.Hindsight
 	Model     string
+	Pipeline  *pipeline.Service
 }
 type Message struct {
 	Role       string       `json:"role"`
@@ -64,6 +66,11 @@ type Detail struct {
 }
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+var internalSession = regexp.MustCompile(`^internal/build/[A-Za-z0-9][A-Za-z0-9._-]{0,79}/author/[01]$`)
+
+func readableSessionID(id string) bool {
+	return identifier.MatchString(id) || internalSession.MatchString(id)
+}
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -75,6 +82,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{task}/memory", s.taskMemory)
 	mux.HandleFunc("POST /api/tasks/{task}/feedback", s.feedback)
 	mux.HandleFunc("POST /api/tasks/{task}/recall", s.recall)
+	if s.Pipeline != nil {
+		s.pipelineRoutes(mux)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -323,7 +333,7 @@ func executionStatus(value enums.WorkflowExecutionStatus) string {
 }
 func (s *Server) detail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !identifier.MatchString(id) {
+	if !readableSessionID(id) {
 		failure(w, 400, "invalid session ID")
 		return
 	}
@@ -434,7 +444,7 @@ func (s *Server) files(id string) ([]File, error) {
 }
 func (s *Server) file(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !identifier.MatchString(id) {
+	if !readableSessionID(id) {
 		failure(w, 400, "invalid session ID")
 		return
 	}

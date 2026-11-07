@@ -69,3 +69,25 @@ func TestConcurrentCommitAndInvocationBinding(t *testing.T) {
 		t.Fatal("corrupt artifact accepted")
 	}
 }
+
+func TestArtifactsCanExceedEnvelopeLimitButRemainBounded(t *testing.T) {
+	f, err := NewFiles(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(strings.Repeat("data", (graph.MaxPayload/4)+1))
+	ref, err := f.Put(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.Get(ref)
+	if err != nil || string(got) != string(data) {
+		t.Fatalf("large artifact roundtrip failed: %v", err)
+	}
+	if _, err = f.Path(graph.Artifact{Digest: graph.Hash([]byte("x")), Size: MaxArtifactBytes + 1}); err == nil {
+		t.Fatal("oversized artifact reference accepted")
+	}
+	if _, err = f.Put(make([]byte, MaxArtifactBytes+1)); err == nil {
+		t.Fatal("oversized artifact accepted")
+	}
+}

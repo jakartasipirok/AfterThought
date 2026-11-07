@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,10 @@ import (
 )
 
 type Files struct{ Root string }
+
+// Artifacts include CSV batches and fitted-model JSON. Keep this independent
+// from the much smaller graph/protocol envelope decoding limit.
+const MaxArtifactBytes = 64 << 20
 
 func NewFiles(root string) (*Files, error) {
 	root, err := filepath.Abs(root)
@@ -27,12 +32,15 @@ func NewFiles(root string) (*Files, error) {
 	return f, nil
 }
 func (f *Files) Path(ref graph.Artifact) (string, error) {
-	if !graph.ValidDigest(ref.Digest) || ref.Size < 0 || ref.Size > graph.MaxPayload {
+	if !graph.ValidDigest(ref.Digest) || ref.Size < 0 || ref.Size > MaxArtifactBytes {
 		return "", fmt.Errorf("invalid artifact reference")
 	}
 	return filepath.Join(f.Root, "objects", strings.TrimPrefix(ref.Digest, "sha256:")), nil
 }
 func (f *Files) Put(data []byte) (graph.Artifact, error) {
+	if len(data) > MaxArtifactBytes {
+		return graph.Artifact{}, fmt.Errorf("artifact exceeds %d bytes", MaxArtifactBytes)
+	}
 	ref := graph.Artifact{Digest: graph.Hash(data), Size: int64(len(data))}
 	path, err := f.Path(ref)
 	if err != nil {
@@ -49,7 +57,19 @@ func (f *Files) Get(ref graph.Artifact) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() != ref.Size {
+		return nil, fmt.Errorf("artifact size or file type mismatch")
+	}
+	b, err := io.ReadAll(io.LimitReader(file, MaxArtifactBytes+1))
 	if err != nil {
 		return nil, err
 	}

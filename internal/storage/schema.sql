@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS agent_model_calls (
   model text NOT NULL, input_tokens bigint NOT NULL, output_tokens bigint NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS input_digest text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS agent_memory (
   id bigserial PRIMARY KEY, task_id text NOT NULL, source text NOT NULL,
   content text NOT NULL, dedup_key text NOT NULL UNIQUE,

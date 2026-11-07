@@ -1,46 +1,38 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure
 
-- `cmd/afterthought/`: CLI, worker, and demo server.
-- `internal/harness/`: four tools, isolation, dataset requests, and skills.
-- `internal/runtime/`: Temporal Workflow/Activities; `internal/model/`: provider transports.
-- `internal/memory/`: Hindsight; `internal/storage/`: journal, schema, and artifacts; `internal/graph/`: contracts.
-- `internal/webapi/`: HTTP bridge; `frontend/`: workspace and illustrative replay; `tests/`: browser-module tests.
-- `harness/skills/`: read-only instructions; `docs/`: architecture and dataset notes.
-- Go tests use adjacent `*_test.go` files. Binaries and state belong in ignored `bin/` and `.afterthought/`.
+- `cmd/afterthought/`: CLI, worker, and local demo server.
+- `internal/runtime/`, `model/`, `harness/`: durable authoring, providers, four tools, and isolation.
+- `internal/dataset/`: CSV intake, private splits, evaluation; `execution/`: immutable node interpreter; `pipeline/`: bootstrap, tuning, approval, and batches.
+- `internal/storage/`, `memory/`, `graph/`: journal/artifacts, Hindsight, and legacy contracts.
+- `frontend/`: buildless UI; `harness/skills/`: read-only instructions; `harness/runtime/`: generic ML image; `docs/`: architecture/demo notes.
+- Go tests are adjacent `*_test.go`; browser tests live in `tests/` and `frontend/tests/`. Ignore generated `bin/` and `.afterthought/`.
 
-## Build, Test, and Development Commands
+## Development Commands
 
-Requires Go 1.25+, Docker/Colima, and Compose.
+Requires Go 1.25+, Docker/Colima, Compose, and make; Node.js20+ runs frontend tests.
 
-- `make build`: build `bin/afterthought`.
+- `make demo`: start services, build the ML environment/binary, and serve at `http://127.0.0.1:8080`; CSV graphs use `/graphs.html`.
 - `make up` / `make down`: start/stop services, retaining volumes.
-- `make init`: initialize empty storage; `make worker`: start the agent worker.
-- `make demo`: start services, worker, UI, and API at `http://127.0.0.1:8080`.
-- `make test`: run Go tests with the race detector and Node module tests.
-- `make integration`: test real Docker/Postgres/Temporal with mock providers. Start services and pull `python:3.12-bookworm` first.
-- `gofmt -w cmd internal` and `go vet ./...`: format and statically check Go code.
+- `make build`, `make init`, `make worker`: build, initialize, or run separately.
+- `make graph-runtime`: build the generic numerical image.
+- `make test`: Go race tests and Node tests.
+- `make integration`: real Docker/Postgres/Temporal with mock providers; start services and build/pull runtime images first.
+- `gofmt -w cmd internal`, `go vet ./...`: formatting and static checks.
 
-## Coding Style & Naming Conventions
+## Style and Tests
 
-Use `gofmt`, lowercase packages, PascalCase exports, and camelCase private identifiers. Version JSON contracts; document behavior/configuration changes.
+Use idiomatic Go: lowercase packages, PascalCase exports, camelCase private identifiers. Version JSON contracts and document behavior/configuration changes. Name tests `TestBehavior`; gate `TestIntegration...` with `AFTERTHOUGHT_INTEGRATION=1`. No coverage percentage is mandated. Prioritize replay, idempotency, artifact integrity, workspace boundaries, prediction validation, and approval rejection. Automated tests must not require paid calls.
 
-## Testing Guidelines
+## Architecture and Security
 
-Use Go `testing`, Temporal SDK utilities, and Node's test runner. Name Go tests `TestBehavior`; gate `TestIntegration...` with `AFTERTHOUGHT_INTEGRATION=1`. No coverage percentage is mandated. Prioritize replay, uncertain outcomes, memory provenance, idempotent submission, and workspace boundaries. Automated tests must not require paid calls.
+Expose exactly `read`, `bash`, `edit`, `write`. Seed no business nodes; load skills lazily. Keep I/O/model calls in Activities and Workflow code deterministic. Preserve journal/outbox identities and distinguish memory observations from verified human feedback.
 
-## Architecture & Security
+Withhold audit data from authoring and labels from serving. Pin source/wrapper/image/config/model/input artifacts. Tuning preserves every unselected revision. Serving has no model/memory/network access. Evaluation never activates a release: explicit human approval with the host-only key is mandatory.
 
-Expose exactly `read`, `bash`, `edit`, and `write` to the model. Start with an empty domain library; load skills lazily. Keep I/O/model calls in Activities and Workflow code deterministic. Preserve journal/outbox identities and distinguish Hindsight observations from verified human feedback. Never commit `.env`, credentials, raw dataset records, or session state.
+Never commit secrets, raw datasets, or session state. Exclude source PII from prompts/screenshots. Keep fictional claims replay separate; exclude `CLAIM_STATUS` from screening. Review is not a fraud finding; recommendations are not settlement actions.
 
-## Commit & Pull Request Guidelines
+## Commits and Pull Requests
 
-History includes `feat: add FE`; use focused, imperative subjects. PRs need the problem, resulting behavior, validation, configuration changes, and relevant issues.
-
-## Frontend Demo
-
-- Serve the live workspace through `make demo`, using same-origin API calls. Keep provider credentials and opaque model response items out of browser responses.
-- Keep the replay separate from agent-authored candidates. The initial domain library remains empty.
-- Distinguish fictional policy and simulated failures. Kaggle data has no verified fraud label; exclude `CLAIM_STATUS` from screening. Review is not a fraud finding; Continue is not payment approval.
-- Exclude source PII from extracts, screenshots, and prompts. Human investigators own claim decisions.
+Use focused imperative subjects, consistent with `feat: add FE`. PRs explain the problem, behavior, validation, configuration changes, and relevant issues.

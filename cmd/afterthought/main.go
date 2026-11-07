@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/jakartasipirok/AfterThought/internal/pipeline"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -53,7 +55,7 @@ func run() error {
 		return fmt.Errorf("could not parse .env")
 	}
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: afterthought init|serve|worker|agent|inspect|feedback|memory|sync-memory|reflect|tools|validate [flags]")
+		return fmt.Errorf("usage: afterthought init|serve|worker|agent|approval-code|inspect|feedback|memory|sync-memory|reflect|tools|validate [flags]")
 	}
 	command := os.Args[1]
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -79,6 +81,18 @@ func run() error {
 	}
 	if command == "tools" {
 		return printJSON(harness.Definitions())
+	}
+	if command == "approval-code" {
+		path, err := filepath.Abs(pipeline.ApprovalKeyPath(env("AFTERTHOUGHT_DATA_DIR", ".afterthought")))
+		if err != nil {
+			return err
+		}
+		key, err := pipeline.ReadApprovalKey(filepath.Dir(path))
+		if err != nil {
+			return fmt.Errorf("approval key is unavailable; start make demo first")
+		}
+		_, err = fmt.Fprintln(os.Stdout, key)
+		return err
 	}
 	if command == "validate" {
 		b, err := os.ReadFile(*graphPath)

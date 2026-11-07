@@ -24,10 +24,14 @@ import (
 const TaskQueue = "afterthought-agent-v1"
 
 type Input struct {
-	ID       string `json:"id"`
-	Task     string `json:"task"`
-	Prompt   string `json:"prompt"`
-	MaxTurns int    `json:"max_turns"`
+	ID              string `json:"id"`
+	Task            string `json:"task"`
+	Prompt          string `json:"prompt"`
+	MaxTurns        int    `json:"max_turns"`
+	DatasetID       string `json:"dataset_id,omitempty"`
+	ParentReleaseID string `json:"parent_release_id,omitempty"`
+	TargetNode      string `json:"target_node,omitempty"`
+	ResumeSessionID string `json:"resume_session_id,omitempty"`
 }
 type Outcome struct {
 	ID         string         `json:"id"`
@@ -111,13 +115,15 @@ func AgentWorkflow(ctx workflow.Context, in Input) (out Outcome, err error) {
 }
 
 type Activities struct {
-	DB        *storage.DB
-	Files     *storage.Files
-	Model     *model.Client
-	Skills    string
-	Image     string
-	Network   string
-	Hindsight *memory.Hindsight
+	DB         *storage.DB
+	Files      *storage.Files
+	Model      *model.Client
+	Skills     string
+	Image      string
+	Network    string
+	Hindsight  *memory.Hindsight
+	GraphImage string
+	Prepare    func(context.Context, Input, string) (string, error)
 }
 
 func (a *Activities) workspace(id string) string {
@@ -127,6 +133,31 @@ func (a *Activities) Setup(ctx context.Context, in Input) (storage.Session, erro
 	stop := heartbeat(ctx)
 	defer stop()
 	if previous, err := a.DB.Session(ctx, in.ID); err == nil {
+		if previous.Task != in.Task {
+			return previous, fmt.Errorf("session ID belongs to a different task")
+		}
+		if previous.InputDigest != "" && previous.InputDigest != graph.Digest(in) {
+			return previous, fmt.Errorf("session ID belongs to a different authoring request")
+		}
+		if previous.InputDigest == "" {
+			if in.DatasetID != "" {
+				return previous, fmt.Errorf("legacy session cannot be reused for a graph build")
+			}
+			messages, e := a.load(previous.Transcript)
+			if e != nil {
+				return previous, e
+			}
+			prompt := ""
+			for i := len(messages) - 1; i >= 0; i-- {
+				if messages[i].Role == "user" {
+					prompt = messages[i].Content
+					break
+				}
+			}
+			if prompt != in.Prompt {
+				return previous, fmt.Errorf("legacy session request does not match")
+			}
+		}
 		return previous, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return previous, err
@@ -135,11 +166,22 @@ func (a *Activities) Setup(ctx context.Context, in Input) (storage.Session, erro
 	if err := os.MkdirAll(filepath.Join(workspace, "skills"), 0755); err != nil {
 		return storage.Session{}, err
 	}
+	prepared := ""
+	if a.Prepare != nil {
+		var err error
+		prepared, err = a.Prepare(ctx, in, workspace)
+		if err != nil {
+			return storage.Session{}, err
+		}
+	}
 	skills, err := harness.Catalog(a.Skills)
 	if err != nil {
 		return storage.Session{}, err
 	}
 	messages := []model.Message{{Role: "system", Content: harness.SystemPrompt(skills)}}
+	if prepared != "" {
+		messages = append(messages, model.Message{Role: "user", Content: prepared})
+	}
 	memory, err := a.DB.Memory(ctx, in.Task)
 	if err != nil {
 		return storage.Session{}, err
@@ -166,7 +208,15 @@ func (a *Activities) Setup(ctx context.Context, in Input) (storage.Session, erro
 	if err != nil {
 		return storage.Session{}, err
 	}
-	return a.DB.CreateSession(ctx, storage.Session{ID: in.ID, Task: in.Task, Transcript: ref, Image: a.Image})
+	image := a.Image
+	if in.DatasetID != "" && a.GraphImage != "" {
+		image = a.GraphImage
+	}
+	saved, err := a.DB.CreateSession(ctx, storage.Session{ID: in.ID, Task: in.Task, Transcript: ref, Image: image, InputDigest: graph.Digest(in)})
+	if err == nil && saved.InputDigest != graph.Digest(in) {
+		err = fmt.Errorf("session request identity changed during setup")
+	}
+	return saved, err
 }
 func (a *Activities) save(messages []model.Message) (graph.Artifact, error) {
 	b, err := json.Marshal(messages)

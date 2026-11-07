@@ -1,4 +1,4 @@
-.PHONY: build test integration up down init worker demo
+.PHONY: build test integration up down init worker demo graph-runtime
 
 build:
 	mkdir -p bin
@@ -9,7 +9,7 @@ test:
 	node --test tests/*.test.mjs frontend/tests/*.test.mjs
 
 integration:
-	AFTERTHOUGHT_INTEGRATION=1 go test -race ./internal/harness ./internal/runtime ./internal/webapi
+	AFTERTHOUGHT_INTEGRATION=1 go test -race ./internal/harness ./internal/runtime ./internal/webapi ./internal/dataset ./internal/execution ./internal/pipeline
 
 up:
 	docker compose up -d --wait
@@ -23,5 +23,8 @@ init: build
 worker: build
 	bin/afterthought worker
 
-demo: up build
+graph-runtime:
+	docker build -t afterthought-ml:v1 -f harness/runtime/Dockerfile .
+
+demo: up graph-runtime build
 	bin/afterthought serve

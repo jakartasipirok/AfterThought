@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jakartasipirok/AfterThought/internal/execution"
 	"github.com/jakartasipirok/AfterThought/internal/harness"
 	"github.com/jakartasipirok/AfterThought/internal/model"
+	"github.com/jakartasipirok/AfterThought/internal/pipeline"
 	agentruntime "github.com/jakartasipirok/AfterThought/internal/runtime"
 	"github.com/jakartasipirok/AfterThought/internal/storage"
 	"go.temporal.io/sdk/client"
@@ -39,9 +41,20 @@ func startWorker(ctx context.Context, db *storage.DB, files *storage.Files, c cl
 		Network: env("AFTERTHOUGHT_SANDBOX_NETWORK", "none"),
 		Model:   &model.Client{Model: modelName, API: env("AFTERTHOUGHT_MODEL_API", "auto"), BaseURL: env("AFTERTHOUGHT_MODEL_BASE_URL", "https://api.openai.com/v1"), APIKey: os.Getenv("AFTERTHOUGHT_MODEL_API_KEY")},
 	}
+	s, err := newPipeline(ctx, db, files)
+	if err != nil {
+		return nil, err
+	}
+	a.GraphImage = s.Engine.Image
+	a.Prepare = s.PrepareAuthoring
 	w := worker.New(c, queue, worker.Options{MaxConcurrentActivityExecutionSize: 4})
 	w.RegisterWorkflow(agentruntime.AgentWorkflow)
 	w.RegisterActivity(a)
+	w.RegisterWorkflow(execution.GraphWorkflow)
+	w.RegisterActivity(&execution.Activities{Engine: s.Engine})
+	w.RegisterWorkflow(pipeline.BuildWorkflow)
+	w.RegisterWorkflow(pipeline.BatchWorkflow)
+	w.RegisterActivity(&pipeline.Activities{Service: s})
 	if err = w.Start(); err != nil {
 		return nil, err
 	}
@@ -54,6 +67,7 @@ func reapContainers(ctx context.Context) {
 	for {
 		cleanup, cancel := context.WithTimeout(ctx, 5*time.Second)
 		harness.Reap(cleanup)
+		execution.ReapExpired(cleanup)
 		cancel()
 		select {
 		case <-ctx.Done():

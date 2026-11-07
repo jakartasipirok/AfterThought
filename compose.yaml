@@ -1,0 +1,44 @@
+name: afterthought
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: afterthought
+      POSTGRES_PASSWORD: afterthought
+      POSTGRES_DB: afterthought
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afterthought"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  temporal:
+    image: temporalio/temporal:1.4.1
+    # The local dev server needs write access to the named SQLite volume.
+    user: "0:0"
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/data/temporal.db", "--ui-ip", "0.0.0.0"]
+    ports: ["127.0.0.1:7233:7233", "127.0.0.1:8233:8233"]
+    volumes: ["temporal:/data"]
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:1.2.0
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_MODEL:-gpt-4.1-mini}
+      HINDSIGHT_API_LLM_API_KEY: ${AFTERTHOUGHT_MODEL_API_KEY:-}
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: openai
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL: text-embedding-3-small
+      HINDSIGHT_API_EMBEDDINGS_OPENAI_API_KEY: ${AFTERTHOUGHT_MODEL_API_KEY:-}
+      HINDSIGHT_API_RERANKER_PROVIDER: rrf
+    ports: ["127.0.0.1:8888:8888", "127.0.0.1:9999:9999"]
+    volumes: ["hindsight:/home/hindsight/.pg0"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/health/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 24
+volumes:
+  postgres:
+  temporal:
+  hindsight:

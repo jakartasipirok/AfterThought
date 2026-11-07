@@ -11,6 +11,12 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.*.example
+.secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Python
 __pycache__/
@@ -60,3 +66,22 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Go runtime and local agent state
+.afterthought/
+bin/
+*.test
+coverage.out
+
+# Local datasets, scratch files, and database dumps
+/data/
+/datasets/
+/downloads/
+/tmp/
+/.cache/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sql.gz

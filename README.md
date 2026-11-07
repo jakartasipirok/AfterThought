@@ -1,72 +1,138 @@
 # AfterThought
 
-**Check the claim. Route exceptions. Close the loop.**
+The thinking already happened; now it just runs.
 
-AfterThought is a hackathon prototype for motor-claim exception handling. It replays structured claim records through a deterministic, versioned workflow. Routine claims use **zero LLM calls**. The demo shows how a claim is screened, checked against business rules, routed, reviewed by a person when needed, and given a recorded next action.
+A Go/Temporal graph runtime and authoring harness that starts with **no domain-specific functions, rules, nodes, or seeded graphs**. The model sees exactly four tools: `read`, `bash`, `edit`, and `write`. From an uploaded labelled CSV, it authors separate fit and serving DAGs, with individually versioned Python nodes and tunable configuration.
 
-## End-to-end overview
+The trusted supervisor snapshots node packages, trains on a frozen split, evaluates held-out predictions, and retains the evidence. **Passing evaluation never activates a release. Explicit human approval is required.** An approved serving graph processes a whole CSV batch using ordinary code/ML, with zero LLM calls or tokens. Hindsight supplies attributed learning evidence for later node improvements; it is not queried during serving.
 
-| Stage | What happens | Demo outcome |
-| --- | --- | --- |
-| 1. Screening | Validate required fields, positive amount, date order, and agent/vendor references. A vendor can be unassigned. | A failed prerequisite yields **Hold** and stops later checks. |
-| 2. Automated Business Checking | Apply fictional demo rules for missing police report, amount at least $8,000, and total loss. | Each flag has a reason and claim evidence. |
-| 3. Dynamic Routing | Send an unflagged claim onward; send a missing-report-only claim to document follow-up; send a high-value or total-loss claim to adjuster review. | **Continue** or **Review**, with the assigned route. |
-| 4. Investigation | A claims reviewer records a note and chooses clear concern, request evidence, or escalate concern. | A human disposition; escalation is the only path toward specialist fraud handling. |
-| 5. Reconciliation | Combine the route and disposition into the next workflow state. | Ready for next stage, awaiting investigation, pending evidence, escalated, or blocked. |
+## Run locally
 
-This last stage is **disposition reconciliation**: it makes the exception and its resolution visible in one trace. It is not financial reconciliation. A production insurer would also reconcile authorized settlements with reserves, payment transactions, recoveries, its financial systems, and claim-file evidence. This prototype has no payment or ledger data and never authorizes payment. See [Guidewire's claim financial transaction model](https://docs.guidewire.com/cloud/cc/202511/cloudapibf/cloudAPI/topics/112-CCFin/05-financial-calculations/c_financial_calculations.html) for an industry example.
+Requires Go 1.25+, Docker with Docker Compose, and `make`. Node.js 20+ is needed only to run the frontend tests; the UI needs no install or build step. Start Docker Desktop, or run `colima start` if using Colima.
 
-### A concrete claim story
+From the repository root, create the local configuration without overwriting an existing `.env`:
 
-1. A motor claim arrives without a police report.
-2. The demo flags the missing document and routes the claim to **Document follow-up**. The flag is not a fraud accusation.
-3. In a real insurer, a reviewer would check the policy and evidence. The demo records the reviewer's note and choice to clear the concern, request more evidence, or escalate it.
-4. Reconciliation records whether the claim can continue or still needs action. Payment approval remains outside this demo.
-
-For a later rule-improvement demonstration, an **explicitly fictional insurer policy** could make a police report optional for a defined minor-loss, no-injury, no-police-contact case. The source contains 39 candidate motor records. That would change one flag count, not establish claim legitimacy or fraud accuracy. Any such rule should be tested and approved before release.
-
-## What the replay shows
-
-The unchanged source extract contains **1,574 motor claims**. Under the fictional v1 rules, 1,077 route to Review and 497 to Continue; none fail source-data screening. The missing-report flag appears on 461 claims. The UI can simulate a reference outage for one claim to show Hold and recovery. These are workflow counts, not fraud performance measures.
-
-The review queue includes ordinary document follow-up and adjuster work. Specialist fraud handling requires a human escalation. A real insurer would use its own policy, coverage records, evidence requirements, investigation procedures, and jurisdiction-specific rules.
-
-## Run the frontend
-
-From the repository root:
-
-```bash
-python3 -m http.server 8000 -d frontend
+```sh
+cp -n .env.example .env
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Click a claim to inspect its five-stage trace. On a Review claim, add an investigation note and choose a disposition. Use **Simulate reference outage** to inspect Hold and recovery. Demo decisions are stored only in your browser; **Reset demo decisions** clears them.
+Edit `.env` and set `AFTERTHOUGHT_MODEL_API_KEY`. Keep `AFTERTHOUGHT_MODEL=gpt-6.1-sol` and `AFTERTHOUGHT_MODEL_API=auto` to use Sol through the Responses API. Hindsight uses the same provider key and its separate `HINDSIGHT_MODEL` setting.
 
-Run the workflow tests:
+Then start the complete demo:
 
-```bash
-node --test tests/engine.test.mjs
+```sh
+docker pull python:3.12-bookworm
+make demo
 ```
 
-## Repository layout
+Open **http://127.0.0.1:8080/graphs.html** for CSV-to-graph execution, or **http://127.0.0.1:8080** for the general authoring workspace. `make demo` starts Postgres, Temporal, and Hindsight, builds a generic Python/NumPy/pandas/scikit-learn environment and the Go binary, initializes the schemas, and runs the worker with the UI/API. The first startup downloads images and dependencies and may take several minutes. Keep this terminal running.
 
-```text
-AfterThought/
-├── AGENTS.md                 # Coding-agent entry point
-├── README.md                 # Product and workflow overview
-├── frontend/
-│   ├── index.html
-│   ├── src/                  # UI and deterministic workflow engine
-│   └── data/                 # PII-free motor claims and ID references
-├── scripts/prepare_data.py  # Rebuild the frontend extract
-└── tests/engine.test.mjs
+Press **Ctrl+C** to stop the UI and worker. Run `make down` to stop the supporting services while retaining their volumes. Run `make demo` again to restart with saved sessions and memory. Keep `.env`, `.afterthought/`, and the Docker volumes locally; Git ignores the configuration and generated state.
+
+Service dashboards: Temporal at <http://127.0.0.1:8233> and Hindsight at <http://127.0.0.1:9999>.
+
+See the [demo walkthrough](docs/demo.md) for a presentation sequence.
+
+1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
+2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
+3. Inspect each node's pinned source/configuration, execution evidence, and evaluation reports. Select one node and request a revision. Every other node and the topology must remain unchanged; serving-node edits reuse the frozen fitted artifact. Candidates that regress in development F1 or fail gates are ineligible.
+4. A human reviews the eligible candidate and explicitly approves activation. Read the host-only approval key in your own terminal:
+
+   ```sh
+   bin/afterthought approval-code
+   ```
+
+   Enter that key and your reviewer identity in the approval form and confirm the named release. The key is stored in ignored `.afterthought/operator-approval.key`, never mounted into agent/node containers, and never returned by the API. Approval uses an expected-current-release check and an atomic audit record. Each revision needs a separate human approval.
+5. Upload an inference CSV and run an approved release. The graph processes the batch without a model or Hindsight client; nodes have no network or provider credentials. Download the predictions, reasons, node trace, and zero-token counters. Existing runs remain pinned when a later release is activated.
+
+The general authoring page still supports prompts, optional dataset URLs, tool traces/files, human feedback, and Hindsight recall. Executable graph intake currently uses CSV upload, not automatic Kaggle ingestion.
+
+The **claims replay** is a separate illustrative policy demo. Its fictional rules and browser decisions are not agent-authored or promoted workflows; see [replay details](docs/claims-replay.md). Live sessions do not import that ruleset. Real fraud accuracy requires externally verified labels; the bundled Kaggle extract has none. `CLAIM_STATUS` is excluded from graph features and targets.
+
+This milestone supports binary tabular targets, up to 64 MiB/100,000 CSV rows, explicit feature selection, and a local Docker runtime. Numeric/boolean/string/null feature types are frozen at intake. Stratified row splits do not replace entity/time-based validation where those are needed. Audit rows are withheld from the agent, but repeated operator review of audit metrics consumes their independence; use fresh audit evidence for final claims. Autonomous improvement scheduling, shared image registries, multi-tenant authentication, and production claim settlement are not implemented.
+
+`bin/afterthought serve --with-worker=false` serves the UI/API with a separately running worker. Use `--addr 127.0.0.1:8081` or `--ui-dir frontend` to change local settings. The server accepts loopback bindings only; it is a local demo with access to agent execution, not an authenticated public service. API calls use the same origin and never send the provider key to the browser.
+
+## CLI usage
+
+The CLI loads `.env` automatically without overriding exported variables. Use the CLI instead of `make demo` when running a separate worker or submitting tasks from a terminal.
+
+Set `AFTERTHOUGHT_MODEL_API_KEY` and `AFTERTHOUGHT_MODEL` for a model supporting function calling. The default endpoint is OpenAI; another compatible endpoint can be configured. GPT-6.1 Sol uses model ID `gpt-6.1-sol` and is automatically routed to the Responses API, which its tool calling requires. Other models retain the Chat Completions adapter. Override routing with `AFTERTHOUGHT_MODEL_API=responses` or `chat_completions` when needed.
+
+The Responses adapter uses `store:false` and preserves opaque reasoning/output items in local transcripts across tool turns, so recovery does not depend on provider-stored response IDs. See the [official Sol model requirements](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+
+```sh
+colima start                       # if using Colima and it is stopped
+docker pull python:3.12-bookworm    # generic Bash/Python environment
+make up
+make init
+make graph-runtime
+make worker
 ```
 
-## Data provenance and limits
+The model name can also be supplied with `bin/afterthought worker --model MODEL_NAME`. Credentials remain in the worker/Hindsight services and are not mounted into agent workspaces.
 
-`frontend/data/motor_claims.json` is a PII-free extract of the motor rows from Kaggle's [Insurance Claims Fraud Data](https://www.kaggle.com/datasets/mastmustu/insurance-claims-fraud-data/data), plus agent and vendor ID reference sets. The source `CLAIM_STATUS` field is excluded. The dataset has **no verified fraud label**, policy coverage master, payment ledger, or adjudicated investigation outcome. Do not use its historical status codes as fraud truth or claim a measured fraud reduction, precision, recall, or financial ROI.
+In another terminal:
 
-To rebuild the extract from the original three CSVs:
-
-```bash
-python3 scripts/prepare_data.py /path/to/source-csv-directory frontend/data/motor_claims.json
+```sh
+bin/afterthought agent --task pipeline-research \
+  --prompt 'Inspect the available skills, create a small reusable program and graph proposal from scratch, and run meaningful tests.'
 ```
+
+Or supply a dataset:
+
+```sh
+bin/afterthought agent --task insurance-research \
+  --dataset https://www.kaggle.com/datasets/mastmustu/insurance-claims-fraud-data/data \
+  --objective 'Investigate claim-level fraud and propose an evaluated workflow'
+```
+
+Bash has no network by default. Dataset downloading needs `AFTERTHOUGHT_SANDBOX_NETWORK=bridge` in the worker's environment and a worker restart. The agent may also work with files explicitly placed in its workspace. It cannot access the host repository or its `.env`.
+
+Sessions have a default budget of 12 model turns, configurable with `--max-turns` up to 32. Files and transcripts survive worker restarts. `bin/afterthought inspect --id SESSION_ID` shows the journal and model usage. Session files live under `.afterthought/workspaces/sha256(SESSION_ID)/`.
+
+## Minimal visibility
+
+The design follows [Pi's default four tools](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/index.ts) and [progressive skill loading](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/skills.md).
+
+- `read`: bounded file reads, including lazy skill loading.
+- `bash`: scripts, inspection, search, and tests inside a container.
+- `edit`: replace exactly one matching text fragment.
+- `write`: create or replace a workspace file atomically.
+
+`bin/afterthought tools` prints the model-visible definitions. Skill bodies load on demand from the read-only mount. CSV sessions also stage a lazy `graph-authoring.md` protocol guide and permitted training/development data; no business implementation is seeded. Generated nodes expose `run(inputs, config)`; the trusted pinned wrapper implements artifact I/O and result checksums.
+
+## Hindsight memory
+
+`make up` starts Hindsight 1.2.0 alongside Postgres and Temporal. The Compose service uses the configured OpenAI key for extraction and embeddings, and RRF-only ranking to avoid downloading a large local reranker. Its API is at localhost:8888 and UI at localhost:9999. Temporal UI is at localhost:8233.
+
+Hindsight is the default learning backend. Postgres retains the authoritative transcript/tool journal and raw memory outbox; Hindsight extracts and recalls learned patterns. Each task gets a separate bank, with task tags and source metadata. Derived observations include supporting source facts when available and are marked for verification; they do not inherit ground-truth status. No memories are pre-seeded.
+
+Before authoring, the harness supplies recent attributed records plus relevant Hindsight recall. After a session, it retains command-outcome counts, execution failures, an explicitly unverified model summary, and the transcript digest. Raw tool output and dataset rows are not bulk-sent to memory. A completed session is not proof that its predictions are correct.
+
+```sh
+bin/afterthought feedback --task insurance-research --actor reviewer \
+  --message 'A verified correction or an evaluation result, with its evidence.'
+bin/afterthought memory --task insurance-research --query 'What failed, and why?'
+bin/afterthought reflect --task insurance-research --query 'Which approaches have evidence of working?'
+bin/afterthought sync-memory --task insurance-research
+```
+
+Retain is asynchronous. A stable document ID and operation UUID make outbox retries safe; acceptance does not mean processing has completed. Feedback remains available in the local journal while Hindsight processes it. If delivery fails after a run, the completed work remains saved and the outbox can be retried. A configured Hindsight recall failure is surfaced, not silently hidden.
+
+`AFTERTHOUGHT_MEMORY_BACKEND=local` is an explicit offline mode for development. It does not provide Hindsight learning. Hindsight extraction, embeddings, and reflection may incur provider usage beyond the authoring-model usage shown in the session journal. They belong on the learning path and are excluded from graph serving.
+
+## Verify
+
+```sh
+make test
+make integration
+```
+
+Integration tests require the services and sandbox image. They use mock model/Hindsight endpoints where appropriate, plus real Docker, Postgres, and Temporal. Coverage includes four-tool visibility, lazy skills, workspace escapes, credential isolation, output limits/timeouts, tool-call journaling, turn budgets, and cross-session memory attribution.
+
+The agent's Bash receives only the workspace and read-only skills. The Docker socket, host files, and provider credentials are excluded. Resource/time limits and an expired-container reaper bound work while the worker runs. Docker is a local demo boundary, not a production claim for arbitrary hostile code.
+
+`bin/afterthought validate --graph graph.json` remains a structural validator for legacy v1 manifests. Executable CSV candidates use v2 `candidate.json` with fit/serve DAGs and are packaged/evaluated through the graph runtime UI/API. A plain `graph.proposal.json` remains an unresolved authoring artifact and cannot be served.
+
+`make down` retains volumes. Preserve `.afterthought/` and the Postgres, Temporal, and Hindsight volumes. See [architecture](docs/architecture.md) and [dataset notes](docs/dataset-notes.md).

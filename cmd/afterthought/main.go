@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	datasetstore "github.com/jakartasipirok/AfterThought/internal/dataset"
 	"github.com/jakartasipirok/AfterThought/internal/graph"
 	"github.com/jakartasipirok/AfterThought/internal/harness"
 	"github.com/jakartasipirok/AfterThought/internal/memory"
@@ -55,7 +56,7 @@ func run() error {
 		return fmt.Errorf("could not parse .env")
 	}
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: afterthought init|serve|worker|agent|approval-code|inspect|feedback|memory|sync-memory|reflect|tools|validate [flags]")
+		return fmt.Errorf("usage: afterthought init|serve|worker|agent|approval-code|release-triage|inspect|feedback|memory|sync-memory|reflect|tools|validate [flags]")
 	}
 	command := os.Args[1]
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -68,6 +69,8 @@ func run() error {
 	graphPath := f.String("graph", "graph.json", "graph manifest path")
 	actor := f.String("actor", "", "feedback source identity")
 	feedback := f.String("message", "", "grounded human feedback")
+	approve := f.Bool("approve", false, "explicitly approve the named triage policy revision using the local host key")
+	expectedCurrent := f.String("expected-current-id", "", "expected active release before triage activation; empty means none")
 	modelName := f.String("model", os.Getenv("AFTERTHOUGHT_MODEL"), "model used by the worker")
 	addr := f.String("addr", env("AFTERTHOUGHT_HTTP_ADDRESS", "127.0.0.1:8080"), "loopback HTTP address for serve")
 	uiDir := f.String("ui-dir", env("AFTERTHOUGHT_UI_DIR", "frontend"), "frontend directory for serve")
@@ -120,6 +123,29 @@ func run() error {
 		return err
 	}
 	switch command {
+	case "release-triage":
+		if *id == "" || *actor == "" || *feedback == "" {
+			return fmt.Errorf("release-triage requires --id --actor --message; add --approve only with explicit operator authorization")
+		}
+		s := &pipeline.Service{DB: db, Files: files, Datasets: &datasetstore.Store{DB: db, Files: files}}
+		key, err := pipeline.ReadApprovalKey(files.Root)
+		if err != nil {
+			return err
+		}
+		r, err := s.RequalifyTriage(ctx, *id, *actor, key, *feedback)
+		if err != nil {
+			return err
+		}
+		if *approve {
+			if err = s.Approve(ctx, r.ID, *actor, key, *expectedCurrent); err != nil {
+				return err
+			}
+			r, err = s.Release(ctx, r.ID)
+			if err != nil {
+				return err
+			}
+		}
+		return printJSON(r)
 	case "init":
 		if err = db.Migrate(ctx); err != nil {
 			return err

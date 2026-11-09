@@ -33,6 +33,23 @@ Service dashboards: Temporal at <http://127.0.0.1:8233> and Hindsight at <http:/
 
 See the [demo walkthrough](docs/demo.md) for a presentation sequence.
 
+For a side-by-side comparison of per-case LLM, conventional ML, and approved
+zero-token graph serving on the same held-out dispute cases, see the
+[dispute triage benchmark](benchmarks/disputes/README.md). Its included example
+is explicitly synthetic and does not measure real fraud detection.
+Run all three approaches with `python3 benchmarks/disputes/run_all.py`; the
+launcher pauses for the required human approval before ZTA serving.
+
+For a judge-facing, offline HTML report using the local `fraud_oracle.csv`
+insurance dataset, see the [historical insurance evaluation](benchmarks/insurance/README.md).
+Run `.venv/bin/python benchmarks/insurance/run.py --run-all` to measure a fixed
+500-claim sample and build the report with a claims replay and cost scenarios.
+The insurance candidate requires its own human approval; source labels and
+simulated playback are explicitly distinguished in the report.
+For an operator-authorized demo release after an accuracy-only rejection, the
+insurance guide documents `release-triage`: a separately recorded policy revision
+that keeps accuracy visible and retains the original triage gates and rejection.
+
 1. Upload a CSV, declare the binary target, positive label, label meaning, permitted feature columns, and evaluation thresholds. Confirm label provenance; mark synthetic data explicitly. The server freezes training/development/audit membership and keeps audit data outside the authoring workspace.
 2. Enter an objective and select **Author and evaluate candidate**. The agent creates `candidate.json` and self-contained source for explicit fit/serve nodes. The backend runs those actual nodes, fits only on training data, and computes precision, recall, F1, false-positive rate, accuracy, and majority baseline from held-out labels.
 3. Inspect each node's pinned source/configuration, execution evidence, and evaluation reports. Select one node and request a revision. Every other node and the topology must remain unchanged; serving-node edits reuse the frozen fitted artifact. Candidates that regress in development F1 or fail gates are ineligible.

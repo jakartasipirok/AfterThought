@@ -149,6 +149,7 @@ func optionsFor(t table, options CreateOptions) (CreateOptions, Policy, []int, i
 	options.Target = strings.TrimSpace(options.Target)
 	options.PositiveLabel = strings.TrimSpace(options.PositiveLabel)
 	options.LabelMeaning = strings.TrimSpace(options.LabelMeaning)
+	options.SplitColumn = strings.TrimSpace(options.SplitColumn)
 	var policy Policy
 	if options.Name == "" || len(options.Name) > 128 || !taskPattern.MatchString(options.Task) {
 		return options, policy, nil, 0, fmt.Errorf("dataset requires a name (1..128 bytes) and a task ID")
@@ -171,12 +172,19 @@ func optionsFor(t table, options CreateOptions) (CreateOptions, Policy, []int, i
 		return options, policy, nil, 0, fmt.Errorf("selected target is absent from the CSV header")
 	}
 	options.Target = t.headers[target]
+	if options.SplitColumn != "" {
+		splitIndex, exists := byName[strings.ToLower(options.SplitColumn)]
+		if !exists || splitIndex == target || forbiddenColumn(options.SplitColumn) {
+			return options, policy, nil, 0, fmt.Errorf("split column must exist and differ from the target and identifiers")
+		}
+		options.SplitColumn = t.headers[splitIndex]
+	}
 	indices := make([]int, 0, len(options.FeatureColumns))
 	seen := map[int]bool{}
 	for i, feature := range options.FeatureColumns {
 		feature = strings.TrimSpace(feature)
 		index, ok := byName[strings.ToLower(feature)]
-		if !ok || index == target || seen[index] || forbiddenColumn(feature) {
+		if !ok || index == target || seen[index] || forbiddenColumn(feature) || (options.SplitColumn != "" && strings.EqualFold(feature, options.SplitColumn)) {
 			return options, policy, nil, 0, fmt.Errorf("selected features must exist, be distinct, exclude the target, and exclude PII, identifiers and CLAIM_STATUS")
 		}
 		indices = append(indices, index)
@@ -297,12 +305,37 @@ func prepare(raw []byte, t table, supplied CreateOptions) (Dataset, map[string]D
 	}
 	splitIndices := map[string][]int{"train": {}, "development": {}, "audit": {}}
 	score := func(i int) string { return graph.Hash([]byte(digest + "/split/" + all.RowIDs[i])) }
-	for _, class := range classes {
-		sort.Slice(class, func(i, j int) bool { return score(class[i]) < score(class[j]) })
-		train, development := len(class)*60/100, len(class)*20/100
-		splitIndices["train"] = append(splitIndices["train"], class[:train]...)
-		splitIndices["development"] = append(splitIndices["development"], class[train:train+development]...)
-		splitIndices["audit"] = append(splitIndices["audit"], class[train+development:]...)
+	if options.SplitColumn != "" {
+		splitIndex := -1
+		for i, header := range t.headers {
+			if header == options.SplitColumn {
+				splitIndex = i
+			}
+		}
+		for i, row := range t.rows {
+			name := row[splitIndex]
+			if _, ok := splitIndices[name]; !ok {
+				return dataset, nil, fmt.Errorf("split column must contain only train, development, or audit")
+			}
+			splitIndices[name] = append(splitIndices[name], i)
+		}
+		for name, members := range splitIndices {
+			positive := 0
+			for _, i := range members {
+				positive += all.Labels[i]
+			}
+			if positive < 2 || len(members)-positive < 2 {
+				return dataset, nil, fmt.Errorf("explicit %s split requires at least two examples of each class", name)
+			}
+		}
+	} else {
+		for _, class := range classes {
+			sort.Slice(class, func(i, j int) bool { return score(class[i]) < score(class[j]) })
+			train, development := len(class)*60/100, len(class)*20/100
+			splitIndices["train"] = append(splitIndices["train"], class[:train]...)
+			splitIndices["development"] = append(splitIndices["development"], class[train:train+development]...)
+			splitIndices["audit"] = append(splitIndices["audit"], class[train+development:]...)
+		}
 	}
 	splits := map[string]Data{}
 	counts := map[string]Counts{}

@@ -57,6 +57,9 @@ node_modules/
 *.tsbuildinfo
 
 # Generated output and reports
+/benchmarks/disputes/example/
+/benchmarks/disputes/results/
+/benchmarks/insurance/results/
 build/
 dist/
 out/

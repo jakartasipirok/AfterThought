@@ -239,6 +239,55 @@ func TestTrustedBinaryEvaluationAndRowCoverage(t *testing.T) {
 	}
 }
 
+func TestTriagePolicyKeepsAccuracyButStillEnforcesOtherGates(t *testing.T) {
+	d := Dataset{LabelsVerified: true, LabelMeaning: "Synthetic fraud triage fixture", Policy: Policy{MinPrecision: .1, MinRecall: .15, MaxFalsePositiveRate: .4, Threshold: .5}}
+	truth := Data{}
+	output := Output{}
+	for i := 0; i < 20; i++ {
+		id := strconv.Itoa(i)
+		label, probability, decision := 0, .1, "accept"
+		if i < 2 {
+			label = 1
+		}
+		if i == 0 || i == 2 || i == 3 {
+			probability, decision = .9, "escalate"
+		}
+		truth.Rows = append(truth.Rows, map[string]any{})
+		truth.RowIDs = append(truth.RowIDs, id)
+		truth.Labels = append(truth.Labels, label)
+		output.Predictions = append(output.Predictions, Prediction{id, probability, decision, []string{"fixture"}})
+	}
+	original, err := evaluateData(d, "audit", truth, output)
+	if err != nil || original.Passed || len(original.Failures) != 1 || original.Metrics.Accuracy != .85 || original.Metrics.MajorityBaseline != .9 {
+		t.Fatalf("default accuracy gate changed: %+v %v", original, err)
+	}
+	d.Policy.AccuracyMode = "diagnostic"
+	revised, err := evaluateData(d, "audit", truth, output)
+	if err != nil || !revised.Passed || revised.Metrics != original.Metrics {
+		t.Fatalf("policy revision changed scores or failed triage gates: %+v %v", revised, err)
+	}
+	for _, policy := range []Policy{
+		{AccuracyMode: "diagnostic", MinPrecision: .8, Threshold: .5, MaxFalsePositiveRate: .4},
+		{AccuracyMode: "diagnostic", MinRecall: .8, Threshold: .5, MaxFalsePositiveRate: .4},
+		{AccuracyMode: "diagnostic", MaxFalsePositiveRate: .01, Threshold: .5},
+	} {
+		d.Policy = policy
+		report, err := evaluateData(d, "audit", truth, output)
+		if err != nil || report.Passed {
+			t.Fatalf("triage gate was bypassed: %+v %v", report, err)
+		}
+	}
+	d.Policy.AccuracyMode = "typo"
+	if _, err := evaluateData(d, "audit", truth, output); err == nil {
+		t.Fatal("unknown policy accepted")
+	}
+	d.Policy.AccuracyMode = "diagnostic"
+	output.Predictions = output.Predictions[:19]
+	if _, err := evaluateData(d, "audit", truth, output); err == nil {
+		t.Fatal("incomplete predictions accepted")
+	}
+}
+
 func TestStagedInputsRejectChangesAndSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
@@ -315,5 +364,56 @@ func TestLabelFreeBatchValidationChecksEveryPrediction(t *testing.T) {
 	}
 	if err = store.ValidateOutput(context.Background(), labeled, outputRef); err == nil {
 		t.Fatal("serving input accepted a labels property")
+	}
+}
+
+func TestExplicitSplitsKeepChronologyAndMembershipPrivate(t *testing.T) {
+	var raw bytes.Buffer
+	w := csv.NewWriter(&raw)
+	_ = w.Write([]string{"signal", "outcome", "partition"})
+	for i := 0; i < 100; i++ {
+		name := "train"
+		if i >= 60 {
+			name = "development"
+		}
+		if i >= 80 {
+			name = "audit"
+		}
+		label := "no"
+		if i%5 == 0 {
+			label = "yes"
+		}
+		_ = w.Write([]string{strconv.Itoa(i), label, name})
+	}
+	w.Flush()
+	options := fixtureOptions()
+	options.FeatureColumns = []string{"signal"}
+	options.SplitColumn = "partition"
+	_, splits := prepareFixture(t, raw.Bytes(), options)
+	for name, data := range splits {
+		for _, row := range data.Rows {
+			i := int(row["signal"].(float64))
+			if (name == "train" && i >= 60) || (name == "development" && (i < 60 || i >= 80)) || (name == "audit" && i < 80) {
+				t.Fatal("explicit temporal membership changed")
+			}
+			if len(row) != 1 {
+				t.Fatal("split or target leaked into features")
+			}
+		}
+	}
+	_, table, err := readCSV(context.Background(), bytes.NewReader(raw.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"missing", "outcome", "signal"} {
+		invalid := options
+		invalid.SplitColumn = column
+		if _, _, err := prepare(raw.Bytes(), table, invalid); err == nil {
+			t.Fatalf("accepted invalid split column %s", column)
+		}
+	}
+	table.rows[0][2] = "other"
+	if _, _, err := prepare(raw.Bytes(), table, options); err == nil {
+		t.Fatal("accepted unknown split")
 	}
 }

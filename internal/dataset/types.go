@@ -29,6 +29,7 @@ type CreateOptions struct {
 	PositiveLabel        string   `json:"positive_label"`
 	LabelMeaning         string   `json:"label_meaning"`
 	FeatureColumns       []string `json:"feature_columns"`
+	SplitColumn          string   `json:"split_column,omitempty"`
 	LabelsVerified       bool     `json:"labels_verified"`
 	Synthetic            bool     `json:"synthetic"`
 	MinPrecision         float64  `json:"min_precision"`
@@ -38,6 +39,9 @@ type CreateOptions struct {
 }
 
 type Policy struct {
+	// Empty preserves the original majority-accuracy gate. Diagnostic is an
+	// explicit operator policy revision, never an agent-selected default.
+	AccuracyMode         string  `json:"accuracy_mode,omitempty"`
 	MinPrecision         float64 `json:"min_precision"`
 	MinRecall            float64 `json:"min_recall"`
 	MaxFalsePositiveRate float64 `json:"max_false_positive_rate"`

@@ -49,6 +49,17 @@ func decodeArtifact(data []byte, out any) error {
 }
 
 func (s *Store) Evaluate(ctx context.Context, id, split string, predictionArtifact graph.Artifact) (Report, error) {
+	return s.evaluate(ctx, id, split, predictionArtifact, nil)
+}
+
+// EvaluateTriage reuses immutable predictions and truth, changing only whether
+// majority accuracy controls acceptance. No authoring or serving occurs here.
+func (s *Store) EvaluateTriage(ctx context.Context, id, split string, predictionArtifact graph.Artifact) (Report, error) {
+	mode := "diagnostic"
+	return s.evaluate(ctx, id, split, predictionArtifact, &mode)
+}
+
+func (s *Store) evaluate(ctx context.Context, id, split string, predictionArtifact graph.Artifact, accuracyMode *string) (Report, error) {
 	name, err := canonicalSplit(split)
 	if err != nil {
 		return Report{}, err
@@ -56,6 +67,9 @@ func (s *Store) Evaluate(ctx context.Context, id, split string, predictionArtifa
 	dataset, err := s.Get(ctx, id)
 	if err != nil {
 		return Report{}, err
+	}
+	if accuracyMode != nil {
+		dataset.Policy.AccuracyMode = *accuracyMode
 	}
 	truthBytes, err := s.Files.Get(dataset.Splits[name].Labeled)
 	if err != nil {
@@ -150,6 +164,9 @@ func ValidatePredictions(inputs Data, output Output) error {
 
 func evaluateData(dataset Dataset, split string, truth Data, output Output) (Report, error) {
 	report := Report{DatasetID: dataset.ID, DatasetDigest: dataset.Digest, Split: split, InputArtifact: dataset.Splits[split].Input, Policy: dataset.Policy, Failures: []string{}, Synthetic: dataset.Synthetic, LabelsVerified: dataset.LabelsVerified}
+	if dataset.Policy.AccuracyMode != "" && dataset.Policy.AccuracyMode != "diagnostic" {
+		return report, fmt.Errorf("unknown accuracy policy mode")
+	}
 	if !dataset.LabelsVerified || strings.TrimSpace(dataset.LabelMeaning) == "" || len(truth.RowIDs) == 0 || len(truth.Labels) != len(truth.RowIDs) || len(truth.Rows) != len(truth.RowIDs) {
 		return report, fmt.Errorf("evaluation requires a nonempty frozen split with verified labels and declared meaning")
 	}
@@ -208,7 +225,7 @@ func evaluateData(dataset Dataset, split string, truth Data, output Output) (Rep
 	if metrics.FalsePositiveRate > dataset.Policy.MaxFalsePositiveRate+1e-12 {
 		report.Failures = append(report.Failures, "false positive rate exceeds the frozen maximum")
 	}
-	if metrics.Accuracy+1e-12 < metrics.MajorityBaseline {
+	if dataset.Policy.AccuracyMode != "diagnostic" && metrics.Accuracy+1e-12 < metrics.MajorityBaseline {
 		report.Failures = append(report.Failures, "accuracy is below the held-out majority baseline")
 	}
 	report.Passed = len(report.Failures) == 0

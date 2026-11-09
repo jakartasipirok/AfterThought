@@ -79,6 +79,7 @@ type Release struct {
 	ApprovedBy       string                 `json:"approved_by,omitempty"`
 	AutoReviewID     string                 `json:"auto_review_id,omitempty"`
 	Regression       *RegressionReport      `json:"regression,omitempty"`
+	PolicyRevision   *PolicyRevision        `json:"policy_revision,omitempty"`
 }
 type BatchInput struct {
 	ID        string         `json:"id"`
